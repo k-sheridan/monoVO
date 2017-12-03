@@ -44,7 +44,7 @@ void PoseEKF::process(ros::Time to_time)
 
 	// now we can predict the state forward with the nonlinear update function
 
-	//r = r + R(q)*((1/lambda)(dt*b_r' + 0.5*dt^2*b_r'')) { this is where the scale is estimated }
+	//r = r + R(q)*((lambda)*(dt*b_r' + 0.5*dt^2*b_r'')) { this is where the scale is estimated }
 
 	//q = q*d_q(b_w*dt)
 
