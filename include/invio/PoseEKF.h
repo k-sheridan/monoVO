@@ -51,6 +51,8 @@ public:
 		void setOmega(Eigen::Vector3d in){x(11)=in.x(); x(12)=in.y(); x(13)=in.z();}
 		void setBodyFrameAcceleration(Eigen::Vector3d in){x(14)=in.x(); x(15)=in.y(); x(16)=in.z();}
 		void setGravityVector(Eigen::Vector3d in){x(17)=in.x(); x(18)=in.y(); x(19)=in.z();}
+		void setAccelerometerBias(Eigen::Vector3d in){x(20)=in.x(); x(21)=in.y(); x(22)=in.z();}
+		void setGyroscopeBias(Eigen::Vector3d in){x(23)=in.x(); x(24)=in.y(); x(25)=in.z();}
 
 
 	} state;
