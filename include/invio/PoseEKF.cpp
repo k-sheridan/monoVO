@@ -40,6 +40,7 @@ void PoseEKF::process(ros::Time to_time)
 
 	// first compute the linearized transition function at the previous state
 	Eigen::Matrix<double, STATE_SIZE, STATE_SIZE> F;
+	//TODO check if F will be initialized with all zeros
 	this->computeStateTransitionJacobian(this->state, dt, F);
 
 	// now we can predict the state forward with the nonlinear update function
@@ -52,7 +53,7 @@ void PoseEKF::process(ros::Time to_time)
 	//g = d_q(b_w*dt)*g
 	double omega_norm = this->state.getOmega().norm();
 	double theta = dt * omega_norm;
-	if(omega_norm > 1e-10){
+	if(omega_norm > 1e-10){ // this ensures that we don't divide by zero. im omega is zero that means that the delta quaternion is the identity quaternion
 		Eigen::Vector3d v = this->state.getOmega() / omega_norm;
 
 		double sine_theta_2 = sin(theta/2.0);
@@ -61,6 +62,8 @@ void PoseEKF::process(ros::Time to_time)
 
 		this->state.setQuat(this->state.getQuat() * dq); // finally rotate the quat by the delta quat
 		this->state.setGravityVector(dq.inverse() * this->state.getGravityVector()); // multiply the gravity vector by the conjugate of the quaternion
+
+		ROS_ASSERT(this->state.getQuat().norm() == 1.0);
 	}
 
 	//lambda^(-1) = lambda^(-1)
