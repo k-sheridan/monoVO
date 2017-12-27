@@ -69,6 +69,8 @@ private:
 
 	void computeStateTransitionJacobian(State& from_state, double dt, Eigen::Matrix<double, STATE_SIZE, STATE_SIZE>& F);
 
+	void computeAngle2QuaternionJacobian(Eigen::Vector3d angle, Eigen::Matrix<double, 4, 3>& J);
+
 };
 
 #endif /* INVIO_INCLUDE_INVIO_POSEEKF_H_ */
