@@ -14,7 +14,6 @@ pos_process = [pos + quaternionRotate(quat, lambda*(dt*vel + 0.5*dt*dt*accel))]
 omega_norm = norm(omega);
 v = omega/omega_norm;
 theta = dt*omega_norm;
-dq = [cos(theta/2); v*sin(theta/2)]
-dq_inv = [cos(theta/2); -v*sin(theta/2)]
+dq = [cos(theta/2)]
 
-quat_process = multiplyQuaternions(quat, dq)
+quat_process = quatrotate(quat, )
