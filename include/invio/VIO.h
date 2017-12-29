@@ -87,9 +87,9 @@ public:
 
 	double getHuberWeight(double error);
 
-	bool MOBA(Frame& f, double& perPixelError, bool useImmature);
+	bool MOBA(Frame& f, Eigen::Matrix<double, 6, 6>& cov, bool useImmature);
 
-	bool optimizePose(Frame& f, double& ppe);
+	bool optimizePose(Frame& f, Eigen::Matrix<double, 6, 6>& cov);
 
 	void replenishFeatures(Frame& f);
 

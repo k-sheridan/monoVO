@@ -29,7 +29,58 @@ PoseEKF::~PoseEKF()
  */
 void PoseEKF::resetState()
 {
+	this->state.setPosition(Eigen::Vector3d(0, 0, 0));
+	this->state.setQuat(Eigen::Quaterniond(1, 0, 0, 0));
+	this->state.setLambda(1.0);
+	this->state.setBodyFrameVelocity(Eigen::Vector3d(0, 0, 0));
+	this->state.setOmega(Eigen::Vector3d(0, 0, 0));
+	this->state.setBodyFrameAcceleration(Eigen::Vector3d(0, 0, 0));
+	this->state.setGravityVector(Eigen::Vector3d(0, 0, 9.8));
 
+	//TODO set the initial biases as parameters
+	this->state.setAccelerometerBias(Eigen::Vector3d(0, 0, 0));
+	this->state.setGyroscopeBias(Eigen::Vector3d(0, 0, 0));
+
+	//set the initial uncertainties
+	this->state.Sigma(0, 0) = 0;
+	this->state.Sigma(1, 1) = 0;
+	this->state.Sigma(2, 2) = 0;
+
+	this->state.Sigma(3, 3) = 0;
+	this->state.Sigma(4, 4) = 0;
+	this->state.Sigma(5, 5) = 0;
+	this->state.Sigma(6, 6) = 0;
+
+	this->state.Sigma(7, 7) = 0; //lambda is unknown when trying to estimate the scale
+
+	this->state.Sigma(8, 8) = 10000;
+	this->state.Sigma(9, 9) = 10000;
+	this->state.Sigma(10, 10) = 10000;
+	this->state.Sigma(11, 11) = 10000;
+	this->state.Sigma(12, 12) = 10000;
+	this->state.Sigma(13, 13) = 10000;
+	this->state.Sigma(14, 14) = 10000;
+	this->state.Sigma(15, 15) = 10000;
+	this->state.Sigma(16, 16) = 10000;
+	this->state.Sigma(17, 17) = 10000;
+	this->state.Sigma(18, 18) = 10000;
+	this->state.Sigma(19, 19) = 10000;
+
+	this->state.Sigma(20, 20) = 10000;
+	this->state.Sigma(21, 21) = 10000;
+	this->state.Sigma(22, 22) = 10000;
+	this->state.Sigma(23, 23) = 10000;
+	this->state.Sigma(24, 24) = 10000;
+	this->state.Sigma(25, 25) = 10000;
+
+}
+
+Sophus::SE3d PoseEKF::getSE3(){
+	Sophus::SE3d pose;
+
+	pose = Sophus::SE3d(this->state.getQuat(), this->state.getPosition());
+
+	return pose;
 }
 
 /*
@@ -91,6 +142,51 @@ void PoseEKF::process(ros::Time to_time)
 	//b_r'' = b_r''
 
 	//biases = biases
+
+	//use F to process the covariance matrix
+
+	this->state.Sigma = F*this->state.Sigma*F.transpose() + this->computeProcessNoise(dt);
+}
+
+Eigen::Matrix<double, STATE_SIZE, STATE_SIZE> PoseEKF::computeProcessNoise(double dt)
+{
+	Eigen::Matrix<double, STATE_SIZE, STATE_SIZE> Q;
+	Q.setZero(); // start with a fresh plate
+
+	Q(0, 0) = 0.003*dt;
+	Q(1, 1) = 0.003*dt;
+	Q(2, 2) = 0.003*dt;
+
+	Q(3, 3) = 0.003*dt;
+	Q(4, 4) = 0.003*dt;
+	Q(5, 5) = 0.003*dt;
+	Q(6, 6) = 0.003*dt;
+
+	Q(7, 7) = 0.003*dt;
+
+	Q(8, 8) = 2*dt;
+	Q(9, 9) = 2*dt;
+	Q(10, 10) = 2*dt;
+	Q(11, 11) = 2*dt;
+	Q(12, 12) = 2*dt;
+	Q(13, 13) = 2*dt;
+
+	Q(14, 14) = 4*dt;
+	Q(15, 15) = 4*dt;
+	Q(16, 16) = 4*dt;
+
+	Q(17, 17) = 0.003*dt;
+	Q(18, 18) = 0.003*dt;
+	Q(19, 19) = 0.003*dt;
+
+	Q(20, 20) = 0.005*dt;
+	Q(21, 21) = 0.005*dt;
+	Q(22, 22) = 0.005*dt;
+	Q(23, 23) = 0.005*dt;
+	Q(24, 24) = 0.005*dt;
+	Q(25, 25) = 0.005*dt;
+
+	return Q;
 }
 
 /*

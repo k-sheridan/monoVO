@@ -64,6 +64,8 @@ public:
 
 	void updateWithIMU(sensor_msgs::Imu msg);
 
+	Sophus::SE3d getSE3();
+
 private:
 
 	void resetState(); // place the state and covariance at initial conditions
@@ -71,6 +73,8 @@ private:
 	void computeStateTransitionJacobian(State& from_state, double dt, Eigen::Matrix<double, STATE_SIZE, STATE_SIZE>& F);
 
 	void computeAngle2QuaternionJacobian(Eigen::Vector3d angle, Eigen::Matrix<double, 4, 3>& J);
+
+	Eigen::Matrix<double, STATE_SIZE, STATE_SIZE> computeProcessNoise(double dt);
 
 };
 

@@ -98,7 +98,10 @@ void VIO::addFrame(cv::Mat img, cv::Mat_<float> k, ros::Time t) {
 		this->frame_buffer.push_front(f); // add the frame to the front of the buffer
 
 		//set the predicted pose of the current frame
-		this->frame_buffer.front().setPose(this->frame_buffer.at(1).getPose()); // temp assume zero velocity
+		//this->frame_buffer.front().setPose(this->frame_buffer.at(1).getPose()); // temp assume zero velocity
+		this->pose_ekf.process(t); // predict the current state
+
+		this->frame_buffer.front().setPose(this->pose_ekf.getSE3()); // set the pose using the predicted state
 
 		// attempt to flow features into the next frame if there are features
 		this->flowFeatures(this->frame_buffer.at(1), this->frame_buffer.front());
@@ -122,11 +125,14 @@ void VIO::addFrame(cv::Mat img, cv::Mat_<float> k, ros::Time t) {
 		if(this->initialized) // run moba and depth update if initialized
 		{
 			// attempt to compute our new camera pose from flowed features and their respective depth/position
-			double ppe = 0;
-			bool moba_passed = this->optimizePose(this->frame_buffer.front(), ppe);
+			Eigen::Matrix<double, 6, 6> cov;
+			bool moba_passed = this->optimizePose(this->frame_buffer.front(), cov);
 
 			if(moba_passed)
 			{
+				//update the ekf with the optimized pose and its estimated uncertainty
+				this->pose_ekf.updateWithVOPose(this->frame_buffer.front().getPose(), cov, t);
+
 				// extract the odometry from invio and publish it
 				this->publishOdometry(this->frame_buffer.at(1), this->frame_buffer.front());
 			}
@@ -237,7 +243,7 @@ void VIO::flowFeatures(Frame& last_f, Frame& new_f) {
 
 }
 
-bool VIO::optimizePose(Frame& f, double& tension)
+bool VIO::optimizePose(Frame& f, Eigen::Matrix<double, 6, 6>& cov)
 {
 	if(ANALYZE_RUNTIME){
 		this->startTimer();
@@ -245,7 +251,7 @@ bool VIO::optimizePose(Frame& f, double& tension)
 
 	bool pass = false;
 
-	pass = this->MOBA(f, tension, false);
+	pass = this->MOBA(f, cov, false);
 
 	if(ANALYZE_RUNTIME){
 		this->stopTimer("pose optimization");
@@ -266,7 +272,7 @@ double VIO::getHuberWeight(double error)
 	}
 }
 
-bool VIO::MOBA(Frame& f, double& tension, bool useImmature)
+bool VIO::MOBA(Frame& f, Eigen::Matrix<double, 6, 6>& cov, bool useImmature)
 {
 	double chi2(0.0);
 	std::vector<double> error2_vec;
@@ -336,7 +342,7 @@ bool VIO::MOBA(Frame& f, double& tension, bool useImmature)
 
 			A.noalias() += J.transpose()*J*weight;
 			b.noalias() -= J.transpose()*e*weight;
-			new_chi2 += SQUARED_ERROR * weight;
+			new_chi2 += SQUARED_ERROR;
 
 			index++;
 		}
@@ -361,12 +367,17 @@ bool VIO::MOBA(Frame& f, double& tension, bool useImmature)
 
 		// stop when converged
 		if(dT.norm() <= EPS_MOBA)
+		{
 			break;
+		}
 	}
 
 	ROS_DEBUG_STREAM("optimized trans: " << currentGuess.translation());
 
 	f.setPose_inv(currentGuess); // set the new optimized pose
+
+	//estimate the covariance matrix
+	cov = (A*chi2).inverse();
 
 
 	//remove outliers
