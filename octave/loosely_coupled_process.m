@@ -5,7 +5,7 @@ syms x y z qw qx qy qz lambda b_dx b_dy b_dz b_wx b_wy b_wz b_ax b_ay b_az gx gy
 
 pos = [x;y;z]
 quat = [qw;qx;qy;qz]
-vel = [b_dx;b_dy;b_dy]
+vel = [b_dx;b_dy;b_dz]
 accel = [b_ax;b_ay;b_az]
 omega = [b_wx;b_wy;b_wz]
 

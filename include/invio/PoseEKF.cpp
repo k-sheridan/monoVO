@@ -103,10 +103,54 @@ void PoseEKF::updateWithVOPose(Sophus::SE3d pose,
 
 	//we measure an euler angle, but our state stores its orientation in a quaternion
 	Eigen::Vector3d omega = pose.log().template tail<3>();
+	Eigen::Vector3d pos = pose.translation();
 
-	Eigen::Matrix<double, 4, 3> J;
-	J.setZero();
-	this->computeAngle2QuaternionJacobian(omega, J);
+	Eigen::Matrix<double, 4, 3> J_quat;
+	J_quat.setZero();
+	this->computeAngle2QuaternionJacobian(omega, J_quat);
+
+	Eigen::Matrix<double, 7, 6> J;
+	J.setIdentity();
+
+	J.block<4, 3>(3, 3) = J_quat;
+
+	Eigen::Matrix<double, 7, 7> transformed_cov = J*cov*J.transpose(); // finally get the covariance in terms of quaternions
+
+	Eigen::Matrix<double, 7, 1> residual;
+	residual << pos.x() - this->state.x(0), pos.y() - this->state.x(1), pos.z() - this->state.x(2), pose.unit_quaternion().w() - this->state.x(3),
+			pose.unit_quaternion().x() - this->state.x(4), pose.unit_quaternion().y() - this->state.x(5), pose.unit_quaternion().z() - this->state.x(6);
+
+	Eigen::Matrix<double, 7, STATE_SIZE> H;
+	H.setIdentity(); // the measurement transition is identity
+
+	/*
+	 * y = measurement - expected_measurement;
+    S = R + H*Sigma*H';
+    K = Sigma*H'/(S);
+
+    mu = mu + K*y;
+
+    % use Josephs form: P = ( I ? KH) P (I ? KH)' + KRK'
+    I_KH = (eye(size(Sigma)) - K*H);
+    Sigma = I_KH*Sigma*I_KH' + K*R*K'
+	 */
+
+	Eigen::Matrix<double, 7, 7> S = transformed_cov + H*this->state.Sigma*H.transpose();
+	//x*A = b is equivalent to A.transpose() * z = b.transpose(); x = z.transpose()
+
+
+	Eigen::Matrix<double, STATE_SIZE, 7> K = this->state.Sigma * H.transpose() * S.lu().inverse(); // TODO check efficiency
+
+	this->state.x = this->state.x + K*residual;
+
+	//normalize the quaternion again due to the linearization.
+	this->state.setQuat(this->state.getQuat().normalized());
+
+
+	// update the covariance
+	Eigen::Matrix<double, STATE_SIZE, STATE_SIZE> I_KH = Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) - K * H;
+
+	this->state.Sigma = I_KH*this->state.Sigma*I_KH.transpose() + K*transformed_cov*K.transpose();
 
 }
 
@@ -218,685 +262,479 @@ void PoseEKF::computeStateTransitionJacobian(State& from_state, double dt,
 
 	if (b_wx * b_wx + b_wy * b_wy + b_wz * b_wz > 0.00000001)
 	{
-		double t2 = b_dy * dt;
-		double t3 = dt * dt;
-		double t4 = b_ay * t3 * (1.0 / 2.0);
-		double t5 = t2 + t4;
-		double t6 = b_az * t3 * (1.0 / 2.0);
-		double t7 = t2 + t6;
-		double t8 = b_dx * dt;
-		double t9 = b_ax * t3 * (1.0 / 2.0);
-		double t10 = t8 + t9;
-		double t11 = b_dy * 2.0;
-		double t12 = qy * qy;
-		double t13 = t12 * 2.0;
-		double t14 = qz * qz;
-		double t15 = t14 * 2.0;
-		double t16 = t13 + t15 - 1.0;
-		double t17 = qw * qy * 2.0;
-		double t46 = qx * qz * 2.0;
-		double t18 = t17 - t46;
-		double t19 = qw * qz * 2.0;
-		double t20 = qx * qy * 2.0;
-		double t21 = t19 + t20;
-		double t22 = lambda * qx * t7 * 2.0;
-		double t23 = lambda * qz * t7 * 2.0;
-		double t24 = b_ay * dt;
-		double t25 = t11 + t24;
-		double t26 = b_dx * 2.0;
-		double t27 = b_ax * dt;
-		double t28 = t26 + t27;
-		double t29 = b_az * dt;
-		double t30 = t11 + t29;
-		double t31 = qw * qz;
-		double t32 = qx * qy;
-		double t33 = qw * qx * 2.0;
-		double t34 = qy * qz * 2.0;
-		double t35 = t33 + t34;
-		double t36 = qx * qx;
-		double t37 = t36 * 2.0;
-		double t38 = t15 + t37 - 1.0;
-		double t39 = t31 - t32;
-		double t40 = lambda * qx * t5 * 2.0;
-		double t41 = lambda * qy * t10 * 2.0;
-		double t42 = lambda * qw * t5 * 2.0;
-		double t43 = lambda * qz * t5 * 2.0;
-		double t44 = lambda * qx * t10 * 2.0;
-		double t45 = lambda * qy * t5 * 2.0;
-		double t47 = t17 + t46;
-		double t48 = t33 - t34;
-		double t49 = t13 + t37 - 1.0;
-		double t50 = qw * qy;
-		double t51 = qw * qx;
-		double t52 = qy * qz;
-		double t53 = fabs(b_wx);
-		double t54 = fabs(b_wy);
-		double t55 = fabs(b_wz);
-		double t56 = t53 * t53;
-		double t57 = t54 * t54;
-		double t58 = t55 * t55;
-		double t59 = t56 + t57 + t58;
-		double t60 = sqrt(t59);
-		double t61 = dt * t60 * (1.0 / 2.0);
-		double t62 = sin(t61);
-		double t63 = 1.0 / sqrt(t59);
-		double t64 = (b_wx / fabs(b_wx));
-		double t65 = 1.0 / pow(t59, 3.0 / 2.0);
-		double t66 = cos(t61);
-		double t67 = 1.0 / t59;
-		double t68 = (b_wy / fabs(b_wy));
-		double t69 = (b_wz / fabs(b_wz));
-		double t70 = b_wz * t62 * t63;
-		double t71 = b_wx * t62 * t63;
-		double t72 = qw * t62 * t63;
-		double t73 = b_wy * t62 * t63;
-		double t74 = qy * t62 * t63;
-		double t75 = t62 * t62;
-		double t76 = 1.0 / (t59 * t59);
-		double t77 = b_wy * b_wy;
-		double t78 = b_wz * b_wz;
-		double t79 = t66 * t66;
-		double t80 = dt * t60;
-		double t81 = sin(t80);
-		double t82 = t63 * t81;
-		double t83 = b_wx * t67 * t75 * 2.0;
-		double t84 = t53 * t64 * t75 * t76 * t78 * 4.0;
-		double t85 = b_wx * b_wx;
-		double t86 = b_wy * t67 * t75 * 2.0;
-		double t87 = b_wz * t53 * t62 * t64 * t65 * t66 * 2.0;
-		double t88 = b_wz * dt * t53 * t64 * t67 * t75;
-		double t89 = b_wx * b_wy * dt * t53 * t62 * t64 * t65 * t66 * 2.0;
-		double t90 = dt * t54 * t62 * t65 * t66 * t68 * t78 * 2.0;
-		double t91 = b_wz * t54 * t62 * t65 * t66 * t68 * 2.0;
-		double t92 = b_wz * dt * t54 * t67 * t68 * t75;
-		double t93 = b_wx * b_wy * dt * t54 * t62 * t65 * t66 * t68 * 2.0;
-		double t94 = b_wz * t67 * t75 * 2.0;
-		double t95 = b_wz * t67 * t75 * 4.0;
-		double t96 = dt * t55 * t62 * t65 * t66 * t69 * t78 * 2.0;
-		double t97 = b_wz * dt * t55 * t67 * t69 * t79;
-		double t98 = b_wx * b_wy * t55 * t69 * t75 * t76 * 4.0;
-		double t99 = b_wx * b_wy * t67 * t75 * 2.0;
-		double t100 = b_wx * t67 * t75 * 4.0;
-		double t101 = t53 * t64 * t75 * t76 * t77 * 4.0;
-		double t102 = dt * t53 * t62 * t64 * t65 * t66 * t85 * 2.0;
-		double t103 = b_wx * dt * t53 * t64 * t67 * t79;
-		double t104 = b_wy * b_wz * t53 * t64 * t75 * t76 * 4.0;
-		double t105 = b_wy * dt * t53 * t64 * t67 * t79;
-		double t106 = b_wx * b_wz * dt * t53 * t62 * t64 * t65 * t66 * 2.0;
-		double t107 = b_wy * t67 * t75 * 4.0;
-		double t108 = dt * t54 * t62 * t65 * t66 * t68 * t85 * 2.0;
-		double t109 = dt * t54 * t62 * t65 * t66 * t68 * t77 * 2.0;
-		double t110 = b_wy * dt * t54 * t67 * t68 * t79;
-		double t111 = b_wx * b_wz * dt * t54 * t62 * t65 * t66 * t68 * 2.0;
-		double t112 = b_wx * t54 * t62 * t65 * t66 * t68 * 2.0;
-		double t113 = b_wx * dt * t54 * t67 * t68 * t75;
-		double t114 = b_wy * b_wz * dt * t54 * t62 * t65 * t66 * t68 * 2.0;
-		double t115 = dt * t55 * t62 * t65 * t66 * t69 * t85 * 2.0;
-		double t116 = dt * t55 * t62 * t65 * t66 * t69 * t77 * 2.0;
-		double t117 = b_wy * dt * t55 * t67 * t69 * t79;
-		double t118 = b_wx * b_wz * dt * t55 * t62 * t65 * t66 * t69 * 2.0;
-		double t119 = b_wx * t55 * t62 * t65 * t66 * t69 * 2.0;
-		double t120 = b_wx * dt * t55 * t67 * t69 * t75;
-		double t121 = b_wy * b_wz * dt * t55 * t62 * t65 * t66 * t69 * 2.0;
-		double t122 = b_wy * t63 * t81;
-		double t123 = b_wx * b_wz * t67 * t75 * 2.0;
-		double t124 = b_wy * b_wz * t67 * t75 * 2.0;
-		F(0, 0) = 1.0;
-		F(0, 3) = t43 - lambda * qy * t7 * 2.0;
-		F(0, 4) = t23 + t45;
-		F(0, 5) = t40 - lambda * qw * t7 * 2.0 - lambda * qy * t10 * 4.0;
-		F(0, 6) = t22 + t42 - lambda * qz * t10 * 4.0;
-		F(0, 7) = dt * t16 * t28 * (-1.0 / 2.0) + dt * t21 * t25 * (1.0 / 2.0)
-				- dt * t18 * t30 * (1.0 / 2.0);
-		F(0, 8) = -dt * lambda * t16;
-		F(0, 9) = -dt * lambda * t18 + dt * lambda * t21;
-		F(0, 14) = lambda * t3 * t16 * (-1.0 / 2.0);
-		F(0, 15) = lambda * t3 * (t31 + t32);
-		F(0, 16) = -lambda * t3 * (t50 - qx * qz);
-		F(1, 1) = 1.0;
-		F(1, 3) = t22 - lambda * qz * t10 * 2.0;
-		F(1, 4) = t41 + lambda * qw * t7 * 2.0 - lambda * qx * t5 * 4.0;
-		F(1, 5) = t23 + t44;
-		F(1, 6) = lambda * qw * t10 * -2.0 + lambda * qy * t7 * 2.0
-				- lambda * qz * t5 * 4.0;
-		F(1, 7) = dt * t25 * t38 * (-1.0 / 2.0) + dt * t30 * t35 * (1.0 / 2.0)
-				- dt * t28 * (t19 - t20) * (1.0 / 2.0);
-		F(1, 8) = dt * lambda * t39 * -2.0;
-		F(1, 9) = dt * lambda * t35 - dt * lambda * t38;
-		F(1, 14) = -lambda * t3 * t39;
-		F(1, 15) = lambda * t3 * t38 * (-1.0 / 2.0);
-		F(1, 16) = lambda * t3 * (t51 + t52);
-		F(2, 2) = 1.0;
-		F(2, 3) = -t40 + t41;
-		F(2, 4) = -t42 - lambda * qx * t7 * 4.0 + lambda * qz * t10 * 2.0;
-		F(2, 5) = t43 + lambda * qw * t10 * 2.0 - lambda * qy * t7 * 4.0;
-		F(2, 6) = t44 + t45;
-		F(2, 7) = dt * t25 * t48 * (-1.0 / 2.0) + dt * t28 * t47 * (1.0 / 2.0)
-				- dt * t30 * t49 * (1.0 / 2.0);
-		F(2, 8) = dt * lambda * t47;
-		F(2, 9) = -dt * lambda * t48 - dt * lambda * t49;
-		F(2, 14) = lambda * t3 * (t50 + qx * qz);
-		F(2, 15) = -lambda * t3 * (t51 - t52);
-		F(2, 16) = lambda * t3 * t49 * (-1.0 / 2.0);
-		F(3, 3) = t66;
-		F(3, 4) = -b_wx * t62 * t63;
-		F(3, 5) = -b_wy * t62 * t63;
-		F(3, 6) = -b_wz * t62 * t63;
-		F(3, 11) = -qx * t62 * t63 + b_wx * qx * t53 * t62 * t64 * t65
-				+ b_wy * qy * t53 * t62 * t64 * t65
-				+ b_wz * qz * t53 * t62 * t64 * t65
-				- dt * qw * t53 * t62 * t63 * t64 * (1.0 / 2.0)
-				- b_wx * dt * qx * t53 * t64 * t66 * t67 * (1.0 / 2.0)
-				- b_wy * dt * qy * t53 * t64 * t66 * t67 * (1.0 / 2.0)
-				- b_wz * dt * qz * t53 * t64 * t66 * t67 * (1.0 / 2.0);
-		F(3, 12) = -qy * t62 * t63 + b_wx * qx * t54 * t62 * t65 * t68
-				+ b_wy * qy * t54 * t62 * t65 * t68
-				+ b_wz * qz * t54 * t62 * t65 * t68
-				- dt * qw * t54 * t62 * t63 * t68 * (1.0 / 2.0)
-				- b_wx * dt * qx * t54 * t66 * t67 * t68 * (1.0 / 2.0)
-				- b_wy * dt * qy * t54 * t66 * t67 * t68 * (1.0 / 2.0)
-				- b_wz * dt * qz * t54 * t66 * t67 * t68 * (1.0 / 2.0);
-		F(3, 13) = -qz * t62 * t63 + b_wx * qx * t55 * t62 * t65 * t69
-				+ b_wy * qy * t55 * t62 * t65 * t69
-				+ b_wz * qz * t55 * t62 * t65 * t69
-				- dt * qw * t55 * t62 * t63 * t69 * (1.0 / 2.0)
-				- b_wx * dt * qx * t55 * t66 * t67 * t69 * (1.0 / 2.0)
-				- b_wy * dt * qy * t55 * t66 * t67 * t69 * (1.0 / 2.0)
-				- b_wz * dt * qz * t55 * t66 * t67 * t69 * (1.0 / 2.0);
-		F(4, 3) = t71;
-		F(4, 4) = t66;
-		F(4, 5) = t70;
-		F(4, 6) = -b_wy * t62 * t63;
-		F(4, 11) = t72 - b_wx * qw * t53 * t62 * t64 * t65
-				- b_wz * qy * t53 * t62 * t64 * t65
-				+ b_wy * qz * t53 * t62 * t64 * t65
-				- dt * qx * t53 * t62 * t63 * t64 * (1.0 / 2.0)
-				+ b_wx * dt * qw * t53 * t64 * t66 * t67 * (1.0 / 2.0)
-				+ b_wz * dt * qy * t53 * t64 * t66 * t67 * (1.0 / 2.0)
-				- b_wy * dt * qz * t53 * t64 * t66 * t67 * (1.0 / 2.0);
-		F(4, 12) = -qz * t62 * t63 - b_wx * qw * t54 * t62 * t65 * t68
-				- b_wz * qy * t54 * t62 * t65 * t68
-				+ b_wy * qz * t54 * t62 * t65 * t68
-				- dt * qx * t54 * t62 * t63 * t68 * (1.0 / 2.0)
-				+ b_wx * dt * qw * t54 * t66 * t67 * t68 * (1.0 / 2.0)
-				+ b_wz * dt * qy * t54 * t66 * t67 * t68 * (1.0 / 2.0)
-				- b_wy * dt * qz * t54 * t66 * t67 * t68 * (1.0 / 2.0);
-		F(4, 13) = t74 - b_wx * qw * t55 * t62 * t65 * t69
-				- b_wz * qy * t55 * t62 * t65 * t69
-				+ b_wy * qz * t55 * t62 * t65 * t69
-				- dt * qx * t55 * t62 * t63 * t69 * (1.0 / 2.0)
-				+ b_wx * dt * qw * t55 * t66 * t67 * t69 * (1.0 / 2.0)
-				+ b_wz * dt * qy * t55 * t66 * t67 * t69 * (1.0 / 2.0)
-				- b_wy * dt * qz * t55 * t66 * t67 * t69 * (1.0 / 2.0);
-		F(5, 3) = t73;
-		F(5, 4) = -t70;
-		F(5, 5) = t66;
-		F(5, 6) = t71;
-		F(5, 11) = qz * t62 * t63 - b_wy * qw * t53 * t62 * t64 * t65
-				+ b_wz * qx * t53 * t62 * t64 * t65
-				- b_wx * qz * t53 * t62 * t64 * t65
-				- dt * qy * t53 * t62 * t63 * t64 * (1.0 / 2.0)
-				+ b_wy * dt * qw * t53 * t64 * t66 * t67 * (1.0 / 2.0)
-				- b_wz * dt * qx * t53 * t64 * t66 * t67 * (1.0 / 2.0)
-				+ b_wx * dt * qz * t53 * t64 * t66 * t67 * (1.0 / 2.0);
-		F(5, 12) = t72 - b_wy * qw * t54 * t62 * t65 * t68
-				+ b_wz * qx * t54 * t62 * t65 * t68
-				- b_wx * qz * t54 * t62 * t65 * t68
-				- dt * qy * t54 * t62 * t63 * t68 * (1.0 / 2.0)
-				+ b_wy * dt * qw * t54 * t66 * t67 * t68 * (1.0 / 2.0)
-				- b_wz * dt * qx * t54 * t66 * t67 * t68 * (1.0 / 2.0)
-				+ b_wx * dt * qz * t54 * t66 * t67 * t68 * (1.0 / 2.0);
-		F(5, 13) = -qx * t62 * t63 - b_wy * qw * t55 * t62 * t65 * t69
-				+ b_wz * qx * t55 * t62 * t65 * t69
-				- b_wx * qz * t55 * t62 * t65 * t69
-				- dt * qy * t55 * t62 * t63 * t69 * (1.0 / 2.0)
-				+ b_wy * dt * qw * t55 * t66 * t67 * t69 * (1.0 / 2.0)
-				- b_wz * dt * qx * t55 * t66 * t67 * t69 * (1.0 / 2.0)
-				+ b_wx * dt * qz * t55 * t66 * t67 * t69 * (1.0 / 2.0);
-		F(6, 3) = t70;
-		F(6, 4) = t73;
-		F(6, 5) = -t71;
-		F(6, 6) = t66;
-		F(6, 11) = -t74 - b_wz * qw * t53 * t62 * t64 * t65
-				- b_wy * qx * t53 * t62 * t64 * t65
-				+ b_wx * qy * t53 * t62 * t64 * t65
-				- dt * qz * t53 * t62 * t63 * t64 * (1.0 / 2.0)
-				+ b_wz * dt * qw * t53 * t64 * t66 * t67 * (1.0 / 2.0)
-				+ b_wy * dt * qx * t53 * t64 * t66 * t67 * (1.0 / 2.0)
-				- b_wx * dt * qy * t53 * t64 * t66 * t67 * (1.0 / 2.0);
-		F(6, 12) = qx * t62 * t63 - b_wz * qw * t54 * t62 * t65 * t68
-				- b_wy * qx * t54 * t62 * t65 * t68
-				+ b_wx * qy * t54 * t62 * t65 * t68
-				- dt * qz * t54 * t62 * t63 * t68 * (1.0 / 2.0)
-				+ b_wz * dt * qw * t54 * t66 * t67 * t68 * (1.0 / 2.0)
-				+ b_wy * dt * qx * t54 * t66 * t67 * t68 * (1.0 / 2.0)
-				- b_wx * dt * qy * t54 * t66 * t67 * t68 * (1.0 / 2.0);
-		F(6, 13) = t72 - b_wz * qw * t55 * t62 * t65 * t69
-				- b_wy * qx * t55 * t62 * t65 * t69
-				+ b_wx * qy * t55 * t62 * t65 * t69
-				- dt * qz * t55 * t62 * t63 * t69 * (1.0 / 2.0)
-				+ b_wz * dt * qw * t55 * t66 * t67 * t69 * (1.0 / 2.0)
-				+ b_wy * dt * qx * t55 * t66 * t67 * t69 * (1.0 / 2.0)
-				- b_wx * dt * qy * t55 * t66 * t67 * t69 * (1.0 / 2.0);
-		F(7, 7) = 1.0;
-		F(8, 8) = 1.0;
-		F(8, 14) = dt;
-		F(9, 9) = 1.0;
-		F(9, 15) = dt;
-		F(10, 9) = 1.0;
-		F(10, 16) = dt;
-		F(11, 11) = 1.0;
-		F(12, 12) = 1.0;
-		F(13, 13) = 1.0;
-		F(14, 14) = 1.0;
-		F(15, 15) = 1.0;
-		F(16, 16) = 1.0;
-		F(17, 11) = gx
-				* (t84 + t101 - dt * t53 * t62 * t64 * t65 * t66 * t77 * 2.0
-						- dt * t53 * t62 * t64 * t65 * t66 * t78 * 2.0)
-				+ gz
-						* (t94 + t105 + t106
-								- b_wy * t53 * t62 * t64 * t65 * t66 * 2.0
-								- b_wx * b_wz * t53 * t64 * t75 * t76 * 4.0
-								- b_wy * dt * t53 * t64 * t67 * t75)
-				+ gy
-						* (t86 + t87 + t88 + t89
-								- b_wx * b_wy * t53 * t64 * t75 * t76 * 4.0
-								- b_wz * dt * t53 * t64 * t67 * t79);
-		F(17, 12) = gz
-				* (t82 + t110 + t111 - b_wy * t54 * t62 * t65 * t66 * t68 * 2.0
-						- b_wx * b_wz * t54 * t68 * t75 * t76 * 4.0
-						- b_wy * dt * t54 * t67 * t68 * t75)
-				- gx
-						* (t90 + t107 + t109 - t54 * t68 * t75 * t76 * t77 * 4.0
-								- t54 * t68 * t75 * t76 * t78 * 4.0)
-				+ gy
-						* (t83 + t91 + t92 + t93
-								- b_wx * b_wy * t54 * t68 * t75 * t76 * 4.0
-								- b_wz * dt * t54 * t67 * t68 * t79);
-		F(17, 13) = -gy
-				* (t82 + t97 + t98 - b_wz * t55 * t62 * t65 * t66 * t69 * 2.0
-						- b_wz * dt * t55 * t67 * t69 * t75
-						- b_wx * b_wy * dt * t55 * t62 * t65 * t66 * t69 * 2.0)
-				+ gz
-						* (t83 + t117 + t118
-								- b_wy * t55 * t62 * t65 * t66 * t69 * 2.0
-								- b_wx * b_wz * t55 * t69 * t75 * t76 * 4.0
-								- b_wy * dt * t55 * t67 * t69 * t75)
-				- gx
-						* (t95 + t96 + t116 - t55 * t69 * t75 * t76 * t77 * 4.0
-								- t55 * t69 * t75 * t76 * t78 * 4.0);
-		F(17, 17) = t67 * t75 * t77 * -2.0 - t67 * t75 * t78 * 2.0 + 1.0;
-		F(17, 18) = t99 - b_wz * t63 * t81;
-		F(17, 19) = t122 + t123;
-		F(18, 11) = -gy
-				* (-t84 + t100 + t102 - t53 * t64 * t75 * t76 * t85 * 4.0
-						+ dt * t53 * t62 * t64 * t65 * t66 * t78 * 2.0)
-				- gz
-						* (t82 + t103 + t104
-								- b_wx * t53 * t62 * t64 * t65 * t66 * 2.0
-								- b_wx * dt * t53 * t64 * t67 * t75
-								- b_wy * b_wz * dt * t53 * t62 * t64 * t65 * t66
-										* 2.0)
-				+ gx
-						* (t86 - t87 - t88 + t89
-								- b_wx * b_wy * t53 * t64 * t75 * t76 * 4.0
-								+ b_wz * dt * t53 * t64 * t67 * t79);
-		F(18, 12) = -gy
-				* (t90 + t108 - t54 * t68 * t75 * t76 * t78 * 4.0
-						- t54 * t68 * t75 * t76 * t85 * 4.0)
-				+ gx
-						* (t83 - t91 - t92 + t93
-								- b_wx * b_wy * t54 * t68 * t75 * t76 * 4.0
-								+ b_wz * dt * t54 * t67 * t68 * t79)
-				+ gz
-						* (t94 + t112 + t113 + t114
-								- b_wy * b_wz * t54 * t68 * t75 * t76 * 4.0
-								- b_wx * dt * t54 * t67 * t68 * t79);
-		F(18, 13) = gx
-				* (t82 + t97 - t98 - b_wz * t55 * t62 * t65 * t66 * t69 * 2.0
-						- b_wz * dt * t55 * t67 * t69 * t75
-						+ b_wx * b_wy * dt * t55 * t62 * t65 * t66 * t69 * 2.0)
-				- gy
-						* (t95 + t96 + t115 - t55 * t69 * t75 * t76 * t78 * 4.0
-								- t55 * t69 * t75 * t76 * t85 * 4.0)
-				+ gz
-						* (t86 + t119 + t120 + t121
-								- b_wy * b_wz * t55 * t69 * t75 * t76 * 4.0
-								- b_wx * dt * t55 * t67 * t69 * t79);
-		F(18, 17) = t99 + b_wz * t63 * t81;
-		F(18, 18) = t67 * t75 * t78 * -2.0 - t67 * t75 * t85 * 2.0 + 1.0;
-		F(18, 19) = t124 - b_wx * t63 * t81;
-		F(19, 11) = -gz
-				* (t100 - t101 + t102 - t53 * t64 * t75 * t76 * t85 * 4.0
-						+ dt * t53 * t62 * t64 * t65 * t66 * t77 * 2.0)
-				+ gy
-						* (t82 + t103 - t104
-								- b_wx * t53 * t62 * t64 * t65 * t66 * 2.0
-								- b_wx * dt * t53 * t64 * t67 * t75
-								+ b_wy * b_wz * dt * t53 * t62 * t64 * t65 * t66
-										* 2.0)
-				+ gx
-						* (t94 - t105 + t106
-								+ b_wy * t53 * t62 * t64 * t65 * t66 * 2.0
-								- b_wx * b_wz * t53 * t64 * t75 * t76 * 4.0
-								+ b_wy * dt * t53 * t64 * t67 * t75);
-		F(19, 12) = gy
-				* (t94 - t112 - t113 + t114
-						- b_wy * b_wz * t54 * t68 * t75 * t76 * 4.0
-						+ b_wx * dt * t54 * t67 * t68 * t79)
-				- gz
-						* (t107 + t108 + t109
-								- t54 * t68 * t75 * t76 * t77 * 4.0
-								- t54 * t68 * t75 * t76 * t85 * 4.0)
-				- gx
-						* (t82 + t110 - t111
-								- b_wy * t54 * t62 * t65 * t66 * t68 * 2.0
-								+ b_wx * b_wz * t54 * t68 * t75 * t76 * 4.0
-								- b_wy * dt * t54 * t67 * t68 * t75);
-		F(19, 13) = -gz
-				* (t115 + t116 - t55 * t69 * t75 * t76 * t77 * 4.0
-						- t55 * t69 * t75 * t76 * t85 * 4.0)
-				+ gy
-						* (t86 - t119 - t120 + t121
-								- b_wy * b_wz * t55 * t69 * t75 * t76 * 4.0
-								+ b_wx * dt * t55 * t67 * t69 * t79)
-				+ gx
-						* (t83 - t117 + t118
-								+ b_wy * t55 * t62 * t65 * t66 * t69 * 2.0
-								- b_wx * b_wz * t55 * t69 * t75 * t76 * 4.0
-								+ b_wy * dt * t55 * t67 * t69 * t75);
-		F(19, 17) = -t122 + t123;
-		F(19, 18) = t124 + b_wx * t63 * t81;
-		F(19, 19) = t67 * t75 * t77 * -2.0 - t67 * t75 * t85 * 2.0 + 1.0;
-		F(20, 20) = 1.0;
-		F(21, 21) = 1.0;
-		F(22, 22) = 1.0;
-		F(23, 23) = 1.0;
-		F(24, 24) = 1.0;
-		F(25, 25) = 1.0;
+		  double t2 = dt*dt;
+		  double t3 = b_dy*dt;
+		  double   t4 = b_ay*t2*(1.0/2.0);
+		  double   t5 = t3+t4;
+		  double   t6 = b_dz*dt;
+		  double   t7 = b_az*t2*(1.0/2.0);
+		  double   t8 = t6+t7;
+		  double   t9 = b_dx*dt;
+		  double   t10 = b_ax*t2*(1.0/2.0);
+		  double   t11 = t9+t10;
+		  double   t12 = qy*qy;
+		  double   t13 = t12*2.0;
+		  double   t14 = qz*qz;
+		  double   t15 = t14*2.0;
+		  double   t16 = t13+t15-1.0;
+		  double 	  t17 = qw*qz*2.0;
+		  double 	  t18 = qx*qy*2.0;
+		  double 	  t19 = t17+t18;
+		  double 	  t20 = qw*qy;
+		  double 	  t54 = qx*qz;
+		  double 	  t21 = t20-t54;
+		  double 	  t22 = lambda*qx*t8*2.0;
+		  double 	  t23 = lambda*qz*t8*2.0;
+		  double 	  t24 = b_dy*2.0;
+		  double 	  t25 = b_ay*dt;
+		  double 	  t26 = t24+t25;
+		  double 	  t27 = b_dx*2.0;
+		  double 	  t28 = b_ax*dt;
+		  double 	  t29 = t27+t28;
+		  double 	  t30 = b_dz*2.0;
+		  double 	  t31 = b_az*dt;
+		  double 	  t32 = t30+t31;
+		  double 	  t33 = qw*qz;
+		  double 	  t34 = qx*qy;
+		  double 	  t35 = qx*qx;
+		  double 	  t36 = t35*2.0;
+		  double 	  t37 = t15+t36-1.0;
+		  double 	  t38 = qw*qx*2.0;
+		  double 	  t39 = qy*qz*2.0;
+		  double 	  t40 = t38+t39;
+		  double 	  t41 = t33-t34;
+		  double 	  t42 = lambda*qx*t5*2.0;
+		  double 	  t43 = lambda*qy*t11*2.0;
+		  double 	  t44 = lambda*qw*t5*2.0;
+		  double 	  t45 = lambda*qz*t5*2.0;
+		  double 	  t46 = lambda*qx*t11*2.0;
+		  double 	  t47 = lambda*qy*t5*2.0;
+		  double 	  t48 = qw*qy*2.0;
+		  double 	  t49 = qx*qz*2.0;
+		  double 	  t50 = t48+t49;
+		  double 	  t51 = qw*qx;
+		  double 	  t52 = qy*qz;
+		  double 	  t53 = t13+t36-1.0;
+		  double 		  t55 = t51-t52;
+		  double 	  t56 = fabs(b_wx);
+		  double 	  t57 = fabs(b_wy);
+		  double 	  t58 = fabs(b_wz);
+		  double 	  t59 = t56*t56;
+		  double 	  t60 = t57*t57;
+		  double 	  t61 = t58*t58;
+		  double 	  t62 = t59+t60+t61;
+		  double 	  t63 = sqrt(t62);
+		  double 	  t64 = dt*t63*(1.0/2.0);
+		  double 	  t65 = sin(t64);
+		  double 	  t66 = 1.0/sqrt(t62);
+		  double 	  t67 = (b_wx/fabs(b_wx));
+		  double   t68 = 1.0/pow(t62,3.0/2.0);
+		  double 	  t69 = cos(t64);
+		  double 	  t70 = 1.0/t62;
+		  double 	  t71 = (b_wy/fabs(b_wy));
+		  double 	  t72 = (b_wz/fabs(b_wz));
+		  double 	  t73 = b_wz*t65*t66;
+		  double 	  t74 = b_wx*t65*t66;
+		  double 	  t75 = qw*t65*t66;
+		  double 	  t76 = b_wy*t65*t66;
+		  double 	  t77 = qy*t65*t66;
+		  double 	  t78 = t65*t65;
+		  double 	  t79 = 1.0/(t62*t62);
+		  double 	  t80 = b_wy*b_wy;
+		  double 	  t81 = b_wz*b_wz;
+		  double 	  t82 = t69*t69;
+		  double 	  t83 = dt*t63;
+		  double 	  t84 = sin(t83);
+		  double 	  t85 = t66*t84;
+		  double 	  t86 = b_wx*t70*t78*2.0;
+		  double 	  t87 = t56*t67*t78*t79*t81*4.0;
+		  double 	  t88 = b_wx*b_wx;
+		  double 	  t89 = b_wy*t70*t78*2.0;
+		  double 	  t90 = b_wz*t56*t65*t67*t68*t69*2.0;
+		  double 		  t91 = b_wz*dt*t56*t67*t70*t78;
+		  double 		  t92 = b_wx*b_wy*dt*t56*t65*t67*t68*t69*2.0;
+		  double 		  t93 = dt*t57*t65*t68*t69*t71*t81*2.0;
+		  double 		  t94 = b_wz*t57*t65*t68*t69*t71*2.0;
+		  double 		  t95 = b_wz*dt*t57*t70*t71*t78;
+		  double 		  t96 = b_wx*b_wy*dt*t57*t65*t68*t69*t71*2.0;
+		  double 		  t97 = b_wz*t70*t78*2.0;
+		  double 	  t98 = b_wz*t70*t78*4.0;
+		  double 	  t99 = dt*t58*t65*t68*t69*t72*t81*2.0;
+		  double 	  t100 = b_wz*dt*t58*t70*t72*t82;
+		  double 	  t101 = b_wx*b_wy*t58*t72*t78*t79*4.0;
+		  double 	  t102 = b_wx*b_wy*t70*t78*2.0;
+		  double 	  t103 = b_wx*t70*t78*4.0;
+		  double 	  t104 = t56*t67*t78*t79*t80*4.0;
+		  double 	  t105 = dt*t56*t65*t67*t68*t69*t88*2.0;
+		  double 	  t106 = b_wx*dt*t56*t67*t70*t82;
+		  double 	  t107 = b_wy*b_wz*t56*t67*t78*t79*4.0;
+		  double 	  t108 = b_wy*dt*t56*t67*t70*t82;
+		  double 	  t109 = b_wx*b_wz*dt*t56*t65*t67*t68*t69*2.0;
+		  double 	  t110 = b_wy*t70*t78*4.0;
+		  double 	  t111 = dt*t57*t65*t68*t69*t71*t88*2.0;
+		  double 	  t112 = dt*t57*t65*t68*t69*t71*t80*2.0;
+		  double 	  t113 = b_wy*dt*t57*t70*t71*t82;
+		  double 	  t114 = b_wx*b_wz*dt*t57*t65*t68*t69*t71*2.0;
+		  double 	  t115 = b_wx*t57*t65*t68*t69*t71*2.0;
+		  double 	  t116 = b_wx*dt*t57*t70*t71*t78;
+		  double 	  t117 = b_wy*b_wz*dt*t57*t65*t68*t69*t71*2.0;
+		  double 	  t118 = dt*t58*t65*t68*t69*t72*t88*2.0;
+		  double 	  t119 = dt*t58*t65*t68*t69*t72*t80*2.0;
+		  double 	  t120 = b_wy*dt*t58*t70*t72*t82;
+		  double 	  t121 = b_wx*b_wz*dt*t58*t65*t68*t69*t72*2.0;
+		  double 	  t122 = b_wx*t58*t65*t68*t69*t72*2.0;
+		  double 	  t123 = b_wx*dt*t58*t70*t72*t78;
+		  double 	  t124 = b_wy*b_wz*dt*t58*t65*t68*t69*t72*2.0;
+		  double 	  t125 = b_wy*t66*t84;
+		  double 	  t126 = b_wx*b_wz*t70*t78*2.0;
+		  double   t127 = b_wy*b_wz*t70*t78*2.0;
+		  F(0,0) = 1.0;
+		  F(0,3) = t45-lambda*qy*t8*2.0;
+		  F(0,4) = t23+t47;
+		  F(0,5) = t42-lambda*qw*t8*2.0-lambda*qy*t11*4.0;
+		  F(0,6) = t22+t44-lambda*qz*t11*4.0;
+		  F(0,7) = dt*t32*(t48-qx*qz*2.0)*(-1.0/2.0)-dt*t16*t29*(1.0/2.0)+dt*t19*t26*(1.0/2.0);
+		  F(0,8) = -dt*lambda*t16;
+		  F(0,9) = dt*lambda*t19;
+		  F(0,10) = dt*lambda*t21*-2.0;
+		  F(0,14) = lambda*t2*t16*(-1.0/2.0);
+		  F(0,15) = lambda*t2*(t33+t34);
+		  F(0,16) = -lambda*t2*t21;
+		  F(1,1) = 1.0;
+		  F(1,3) = t22-lambda*qz*t11*2.0;
+		  F(1,4) = t43+lambda*qw*t8*2.0-lambda*qx*t5*4.0;
+		  F(1,5) = t23+t46;
+		  F(1,6) = lambda*qw*t11*-2.0+lambda*qy*t8*2.0-lambda*qz*t5*4.0;
+		  F(1,7) = dt*t26*t37*(-1.0/2.0)+dt*t32*t40*(1.0/2.0)-dt*t29*(t17-t18)*(1.0/2.0);
+		  F(1,8) = dt*lambda*t41*-2.0;
+		  F(1,9) = -dt*lambda*t37;
+		  F(1,10) = dt*lambda*t40;
+		  F(1,14) = -lambda*t2*t41;
+		  F(1,15) = lambda*t2*t37*(-1.0/2.0);
+		  F(1,16) = lambda*t2*(t51+t52);
+		  F(2,2) = 1.0;
+		  F(2,3) = -t42+t43;
+		  F(2,4) = -t44-lambda*qx*t8*4.0+lambda*qz*t11*2.0;
+		  F(2,5) = t45+lambda*qw*t11*2.0-lambda*qy*t8*4.0;
+		  F(2,6) = t46+t47;
+		  F(2,7) = dt*t29*t50*(1.0/2.0)-dt*t32*t53*(1.0/2.0)-dt*t26*(t38-t39)*(1.0/2.0);
+		  F(2,8) = dt*lambda*t50;
+		  F(2,9) = dt*lambda*t55*-2.0;
+		  F(2,10) = -dt*lambda*t53;
+		  F(2,14) = lambda*t2*(t20+t54);
+		  F(2,15) = -lambda*t2*t55;
+		  F(2,16) = lambda*t2*t53*(-1.0/2.0);
+		  F(3,3) = t69;
+		  F(3,4) = -b_wx*t65*t66;
+		  F(3,5) = -b_wy*t65*t66;
+		  F(3,6) = -b_wz*t65*t66;
+		  F(3,11) = -qx*t65*t66+b_wx*qx*t56*t65*t67*t68+b_wy*qy*t56*t65*t67*t68+b_wz*qz*t56*t65*t67*t68-dt*qw*t56*t65*t66*t67*(1.0/2.0)-b_wx*dt*qx*t56*t67*t69*t70*(1.0/2.0)-b_wy*dt*qy*t56*t67*t69*t70*(1.0/2.0)-b_wz*dt*qz*t56*t67*t69*t70*(1.0/2.0);
+		  F(3,12) = -qy*t65*t66+b_wx*qx*t57*t65*t68*t71+b_wy*qy*t57*t65*t68*t71+b_wz*qz*t57*t65*t68*t71-dt*qw*t57*t65*t66*t71*(1.0/2.0)-b_wx*dt*qx*t57*t69*t70*t71*(1.0/2.0)-b_wy*dt*qy*t57*t69*t70*t71*(1.0/2.0)-b_wz*dt*qz*t57*t69*t70*t71*(1.0/2.0);
+		  F(3,13) = -qz*t65*t66+b_wx*qx*t58*t65*t68*t72+b_wy*qy*t58*t65*t68*t72+b_wz*qz*t58*t65*t68*t72-dt*qw*t58*t65*t66*t72*(1.0/2.0)-b_wx*dt*qx*t58*t69*t70*t72*(1.0/2.0)-b_wy*dt*qy*t58*t69*t70*t72*(1.0/2.0)-b_wz*dt*qz*t58*t69*t70*t72*(1.0/2.0);
+		  F(4,3) = t74;
+		  F(4,4) = t69;
+		  F(4,5) = t73;
+		  F(4,6) = -b_wy*t65*t66;
+		  F(4,11) = t75-b_wx*qw*t56*t65*t67*t68-b_wz*qy*t56*t65*t67*t68+b_wy*qz*t56*t65*t67*t68-dt*qx*t56*t65*t66*t67*(1.0/2.0)+b_wx*dt*qw*t56*t67*t69*t70*(1.0/2.0)+b_wz*dt*qy*t56*t67*t69*t70*(1.0/2.0)-b_wy*dt*qz*t56*t67*t69*t70*(1.0/2.0);
+		  F(4,12) = -qz*t65*t66-b_wx*qw*t57*t65*t68*t71-b_wz*qy*t57*t65*t68*t71+b_wy*qz*t57*t65*t68*t71-dt*qx*t57*t65*t66*t71*(1.0/2.0)+b_wx*dt*qw*t57*t69*t70*t71*(1.0/2.0)+b_wz*dt*qy*t57*t69*t70*t71*(1.0/2.0)-b_wy*dt*qz*t57*t69*t70*t71*(1.0/2.0);
+		  F(4,13) = t77-b_wx*qw*t58*t65*t68*t72-b_wz*qy*t58*t65*t68*t72+b_wy*qz*t58*t65*t68*t72-dt*qx*t58*t65*t66*t72*(1.0/2.0)+b_wx*dt*qw*t58*t69*t70*t72*(1.0/2.0)+b_wz*dt*qy*t58*t69*t70*t72*(1.0/2.0)-b_wy*dt*qz*t58*t69*t70*t72*(1.0/2.0);
+		  F(5,3) = t76;
+		  F(5,4) = -t73;
+		  F(5,5) = t69;
+		  F(5,6) = t74;
+		  F(5,11) = qz*t65*t66-b_wy*qw*t56*t65*t67*t68+b_wz*qx*t56*t65*t67*t68-b_wx*qz*t56*t65*t67*t68-dt*qy*t56*t65*t66*t67*(1.0/2.0)+b_wy*dt*qw*t56*t67*t69*t70*(1.0/2.0)-b_wz*dt*qx*t56*t67*t69*t70*(1.0/2.0)+b_wx*dt*qz*t56*t67*t69*t70*(1.0/2.0);
+		  F(5,12) = t75-b_wy*qw*t57*t65*t68*t71+b_wz*qx*t57*t65*t68*t71-b_wx*qz*t57*t65*t68*t71-dt*qy*t57*t65*t66*t71*(1.0/2.0)+b_wy*dt*qw*t57*t69*t70*t71*(1.0/2.0)-b_wz*dt*qx*t57*t69*t70*t71*(1.0/2.0)+b_wx*dt*qz*t57*t69*t70*t71*(1.0/2.0);
+		  F(5,13) = -qx*t65*t66-b_wy*qw*t58*t65*t68*t72+b_wz*qx*t58*t65*t68*t72-b_wx*qz*t58*t65*t68*t72-dt*qy*t58*t65*t66*t72*(1.0/2.0)+b_wy*dt*qw*t58*t69*t70*t72*(1.0/2.0)-b_wz*dt*qx*t58*t69*t70*t72*(1.0/2.0)+b_wx*dt*qz*t58*t69*t70*t72*(1.0/2.0);
+		  F(6,3) = t73;
+		  F(6,4) = t76;
+		  F(6,5) = -t74;
+		  F(6,6) = t69;
+		  F(6,11) = -t77-b_wz*qw*t56*t65*t67*t68-b_wy*qx*t56*t65*t67*t68+b_wx*qy*t56*t65*t67*t68-dt*qz*t56*t65*t66*t67*(1.0/2.0)+b_wz*dt*qw*t56*t67*t69*t70*(1.0/2.0)+b_wy*dt*qx*t56*t67*t69*t70*(1.0/2.0)-b_wx*dt*qy*t56*t67*t69*t70*(1.0/2.0);
+		  F(6,12) = qx*t65*t66-b_wz*qw*t57*t65*t68*t71-b_wy*qx*t57*t65*t68*t71+b_wx*qy*t57*t65*t68*t71-dt*qz*t57*t65*t66*t71*(1.0/2.0)+b_wz*dt*qw*t57*t69*t70*t71*(1.0/2.0)+b_wy*dt*qx*t57*t69*t70*t71*(1.0/2.0)-b_wx*dt*qy*t57*t69*t70*t71*(1.0/2.0);
+		  F(6,13) = t75-b_wz*qw*t58*t65*t68*t72-b_wy*qx*t58*t65*t68*t72+b_wx*qy*t58*t65*t68*t72-dt*qz*t58*t65*t66*t72*(1.0/2.0)+b_wz*dt*qw*t58*t69*t70*t72*(1.0/2.0)+b_wy*dt*qx*t58*t69*t70*t72*(1.0/2.0)-b_wx*dt*qy*t58*t69*t70*t72*(1.0/2.0);
+		  F(7,7) = 1.0;
+		  F(8,8) = 1.0;
+		  F(8,14) = dt;
+		  F(9,9) = 1.0;
+		  F(9,15) = dt;
+		  F(10,10) = 1.0;
+		  F(10,16) = dt;
+		  F(11,11) = 1.0;
+		  F(12,12) = 1.0;
+		  F(13,13) = 1.0;
+		  F(14,14) = 1.0;
+		  F(15,15) = 1.0;
+		  F(16,16) = 1.0;
+		  F(17,11) = gx*(t87+t104-dt*t56*t65*t67*t68*t69*t80*2.0-dt*t56*t65*t67*t68*t69*t81*2.0)+gz*(t97+t108+t109-b_wy*t56*t65*t67*t68*t69*2.0-b_wx*b_wz*t56*t67*t78*t79*4.0-b_wy*dt*t56*t67*t70*t78)+gy*(t89+t90+t91+t92-b_wx*b_wy*t56*t67*t78*t79*4.0-b_wz*dt*t56*t67*t70*t82);
+		  F(17,12) = gz*(t85+t113+t114-b_wy*t57*t65*t68*t69*t71*2.0-b_wx*b_wz*t57*t71*t78*t79*4.0-b_wy*dt*t57*t70*t71*t78)-gx*(t93+t110+t112-t57*t71*t78*t79*t80*4.0-t57*t71*t78*t79*t81*4.0)+gy*(t86+t94+t95+t96-b_wx*b_wy*t57*t71*t78*t79*4.0-b_wz*dt*t57*t70*t71*t82);
+		  F(17,13) = -gy*(t85+t100+t101-b_wz*t58*t65*t68*t69*t72*2.0-b_wz*dt*t58*t70*t72*t78-b_wx*b_wy*dt*t58*t65*t68*t69*t72*2.0)+gz*(t86+t120+t121-b_wy*t58*t65*t68*t69*t72*2.0-b_wx*b_wz*t58*t72*t78*t79*4.0-b_wy*dt*t58*t70*t72*t78)-gx*(t98+t99+t119-t58*t72*t78*t79*t80*4.0-t58*t72*t78*t79*t81*4.0);
+		  F(17,17) = t70*t78*t80*-2.0-t70*t78*t81*2.0+1.0;
+		  F(17,18) = t102-b_wz*t66*t84;
+		  F(17,19) = t125+t126;
+		  F(18,11) = -gy*(-t87+t103+t105-t56*t67*t78*t79*t88*4.0+dt*t56*t65*t67*t68*t69*t81*2.0)-gz*(t85+t106+t107-b_wx*t56*t65*t67*t68*t69*2.0-b_wx*dt*t56*t67*t70*t78-b_wy*b_wz*dt*t56*t65*t67*t68*t69*2.0)+gx*(t89-t90-t91+t92-b_wx*b_wy*t56*t67*t78*t79*4.0+b_wz*dt*t56*t67*t70*t82);
+		  F(18,12) = -gy*(t93+t111-t57*t71*t78*t79*t81*4.0-t57*t71*t78*t79*t88*4.0)+gx*(t86-t94-t95+t96-b_wx*b_wy*t57*t71*t78*t79*4.0+b_wz*dt*t57*t70*t71*t82)+gz*(t97+t115+t116+t117-b_wy*b_wz*t57*t71*t78*t79*4.0-b_wx*dt*t57*t70*t71*t82);
+		  F(18,13) = gx*(t85+t100-t101-b_wz*t58*t65*t68*t69*t72*2.0-b_wz*dt*t58*t70*t72*t78+b_wx*b_wy*dt*t58*t65*t68*t69*t72*2.0)-gy*(t98+t99+t118-t58*t72*t78*t79*t81*4.0-t58*t72*t78*t79*t88*4.0)+gz*(t89+t122+t123+t124-b_wy*b_wz*t58*t72*t78*t79*4.0-b_wx*dt*t58*t70*t72*t82);
+		  F(18,17) = t102+b_wz*t66*t84;
+		  F(18,18) = t70*t78*t81*-2.0-t70*t78*t88*2.0+1.0;
+		  F(18,19) = t127-b_wx*t66*t84;
+		  F(19,11) = -gz*(t103-t104+t105-t56*t67*t78*t79*t88*4.0+dt*t56*t65*t67*t68*t69*t80*2.0)+gy*(t85+t106-t107-b_wx*t56*t65*t67*t68*t69*2.0-b_wx*dt*t56*t67*t70*t78+b_wy*b_wz*dt*t56*t65*t67*t68*t69*2.0)+gx*(t97-t108+t109+b_wy*t56*t65*t67*t68*t69*2.0-b_wx*b_wz*t56*t67*t78*t79*4.0+b_wy*dt*t56*t67*t70*t78);
+		  F(19,12) = gy*(t97-t115-t116+t117-b_wy*b_wz*t57*t71*t78*t79*4.0+b_wx*dt*t57*t70*t71*t82)-gz*(t110+t111+t112-t57*t71*t78*t79*t80*4.0-t57*t71*t78*t79*t88*4.0)-gx*(t85+t113-t114-b_wy*t57*t65*t68*t69*t71*2.0+b_wx*b_wz*t57*t71*t78*t79*4.0-b_wy*dt*t57*t70*t71*t78);
+		  F(19,13) = -gz*(t118+t119-t58*t72*t78*t79*t80*4.0-t58*t72*t78*t79*t88*4.0)+gy*(t89-t122-t123+t124-b_wy*b_wz*t58*t72*t78*t79*4.0+b_wx*dt*t58*t70*t72*t82)+gx*(t86-t120+t121+b_wy*t58*t65*t68*t69*t72*2.0-b_wx*b_wz*t58*t72*t78*t79*4.0+b_wy*dt*t58*t70*t72*t78);
+		  F(19,17) = -t125+t126;
+		  F(19,18) = t127+b_wx*t66*t84;
+		  F(19,19) = t70*t78*t80*-2.0-t70*t78*t88*2.0+1.0;
+		  F(20,20) = 1.0;
+		  F(21,21) = 1.0;
+		  F(22,22) = 1.0;
+		  F(23,23) = 1.0;
+		  F(24,24) = 1.0;
+		  F(25,25) = 1.0;
+
 
 	}
 	else
 	{
-		double t2 = b_dy * dt;
-		double t3 = dt * dt;
-		double t4 = b_ay * t3 * (1.0 / 2.0);
-		double t5 = t2 + t4;
-		double t6 = b_az * t3 * (1.0 / 2.0);
-		double t7 = t2 + t6;
-		double t8 = b_dx * dt;
-		double t9 = b_ax * t3 * (1.0 / 2.0);
-		double t10 = t8 + t9;
-		double t11 = b_dy * 2.0;
-		double t12 = qy * qy;
-		double t13 = t12 * 2.0;
-		double t14 = qz * qz;
-		double t15 = t14 * 2.0;
-		double t16 = t13 + t15 - 1.0;
-		double t17 = qw * qy * 2.0;
-		double t46 = qx * qz * 2.0;
-		double t18 = t17 - t46;
-		double t19 = qw * qz * 2.0;
-		double t20 = qx * qy * 2.0;
-		double t21 = t19 + t20;
-		double t22 = lambda * qx * t7 * 2.0;
-		double t23 = lambda * qz * t7 * 2.0;
-		double t24 = b_ay * dt;
-		double t25 = t11 + t24;
-		double t26 = b_dx * 2.0;
-		double t27 = b_ax * dt;
-		double t28 = t26 + t27;
-		double t29 = b_az * dt;
-		double t30 = t11 + t29;
-		double t31 = qw * qz;
-		double t32 = qx * qy;
-		double t33 = qw * qx * 2.0;
-		double t34 = qy * qz * 2.0;
-		double t35 = t33 + t34;
-		double t36 = qx * qx;
-		double t37 = t36 * 2.0;
-		double t38 = t15 + t37 - 1.0;
-		double t39 = t31 - t32;
-		double t40 = lambda * qx * t5 * 2.0;
-		double t41 = lambda * qy * t10 * 2.0;
-		double t42 = lambda * qw * t5 * 2.0;
-		double t43 = lambda * qz * t5 * 2.0;
-		double t44 = lambda * qx * t10 * 2.0;
-		double t45 = lambda * qy * t5 * 2.0;
-		double t47 = t17 + t46;
-		double t48 = t33 - t34;
-		double t49 = t13 + t37 - 1.0;
-		double t50 = qw * qy;
-		double t51 = qw * qx;
-		double t52 = qy * qz;
-		double t53 = fabs(b_wx);
-		double t54 = fabs(b_wy);
-		double t55 = fabs(b_wz);
-		double t57 = t53 * t53;
-		double t58 = t54 * t54;
-		double t59 = t55 * t55;
-		double t56 = t57 + t58 + t59;
-		double t60 = t3 * t3;
-		double t61 = t56 * t56;
-		double t62 = t60 * t61 * 2.604166666666667E-4;
-		double t64 = t3 * t56 * (1.0 / 4.8E1);
-		double t63 = t62 - t64 + 1.0 / 2.0;
-		double t65 = (b_wx / fabs(b_wx));
-		double t66 = t3 * t53 * t65 * (1.0 / 2.4E1);
-		double t68 = t53 * t56 * t60 * t65 * (1.0 / 9.6E2);
-		double t67 = t66 - t68;
-		double t69 = (b_wy / fabs(b_wy));
-		double t70 = t3 * t54 * t69 * (1.0 / 2.4E1);
-		double t72 = t54 * t56 * t60 * t69 * (1.0 / 9.6E2);
-		double t71 = t70 - t72;
-		double t73 = (b_wz / fabs(b_wz));
-		double t74 = t3 * t55 * t73 * (1.0 / 2.4E1);
-		double t76 = t55 * t56 * t60 * t73 * (1.0 / 9.6E2);
-		double t75 = t74 - t76;
-		double t77 = t60 * t61 * (1.0 / 3.84E2);
-		double t86 = t3 * t56 * (1.0 / 2.0);
-		double t78 = t77 - t86 + 1.0;
-		double t79 = t3 * t53 * t65;
-		double t88 = t53 * t56 * t60 * t65 * (1.0 / 9.6E1);
-		double t80 = t79 - t88;
-		double t81 = t3 * t54 * t69;
-		double t90 = t54 * t56 * t60 * t69 * (1.0 / 9.6E1);
-		double t82 = t81 - t90;
-		double t83 = t3 * t55 * t73;
-		double t91 = t55 * t56 * t60 * t73 * (1.0 / 9.6E1);
-		double t84 = t83 - t91;
-		double t85 = b_wz * t63;
-		double t87 = b_wx * t63;
-		double t89 = qw * t63;
-		double t92 = b_wy * t63;
-		double t93 = qy * t63;
-		double t94 = t63 * t63;
-		double t95 = b_wy * b_wy;
-		double t96 = b_wz * b_wz;
-		double t97 = b_wx * t94 * 2.0;
-		double t99 = t60 * t61;
-		double t100 = t3 * t56 * 8.0E1;
-		double t98 = t99 - t100 + 1.92E3;
-		double t101 = t98 * t98;
-		double t102 = t63 * t78 * 2.0;
-		double t103 = b_wy * t94 * 2.0;
-		double t104 = b_wz * t67 * t78 * 2.0;
-		double t105 = b_wz * t63 * t80 * 2.0;
-		double t106 = t63 * t67 * t96 * 4.0;
-		double t107 = b_wz * t71 * t78 * 2.0;
-		double t108 = b_wz * t63 * t82 * 2.0;
-		double t109 = b_wx * b_wx;
-		double t110 = t63 * t71 * t96 * 4.0;
-		double t111 = b_wx * b_wy * t63 * t75 * 4.0;
-		double t112 = t63 * t75 * t96 * 4.0;
-		double t113 = b_wx * b_wy * t101 * 1.356336805555556E-7;
-		double t114 = b_wy * b_wz * t63 * t67 * 4.0;
-		double t115 = b_wz * t94 * 2.0;
-		double t116 = b_wy * t67 * t78 * 2.0;
-		double t117 = b_wy * t63 * t80 * 2.0;
-		double t118 = b_wx * b_wz * t63 * t67 * 4.0;
-		double t119 = t63 * t67 * t109 * 4.0;
-		double t120 = t63 * t67 * t95 * 4.0;
-		double t121 = b_wy * t71 * t78 * 2.0;
-		double t122 = b_wy * t63 * t82 * 2.0;
-		double t123 = b_wx * b_wz * t63 * t71 * 4.0;
-		double t124 = b_wx * t71 * t78 * 2.0;
-		double t125 = b_wx * t63 * t82 * 2.0;
-		double t126 = t63 * t71 * t109 * 4.0;
-		double t127 = t63 * t71 * t95 * 4.0;
-		double t128 = b_wy * t75 * t78 * 2.0;
-		double t129 = b_wy * t63 * t84 * 2.0;
-		double t130 = b_wx * b_wz * t63 * t75 * 4.0;
-		double t131 = b_wx * t75 * t78 * 2.0;
-		double t132 = b_wx * t63 * t84 * 2.0;
-		double t133 = t63 * t75 * t109 * 4.0;
-		double t134 = t63 * t75 * t95 * 4.0;
-		double t135 = b_wx * b_wz * t101 * 1.356336805555556E-7;
-		double t136 = b_wy * t63 * t78 * 2.0;
-		double t137 = b_wy * b_wz * t101 * 1.356336805555556E-7;
-		F(0, 0) = 1.0;
-		F(0, 3) = t43 - lambda * qy * t7 * 2.0;
-		F(0, 4) = t23 + t45;
-		F(0, 5) = t40 - lambda * qw * t7 * 2.0 - lambda * qy * t10 * 4.0;
-		F(0, 6) = t22 + t42 - lambda * qz * t10 * 4.0;
-		F(0, 7) = dt * t16 * t28 * (-1.0 / 2.0) + dt * t21 * t25 * (1.0 / 2.0)
-				- dt * t18 * t30 * (1.0 / 2.0);
-		F(0, 8) = -dt * lambda * t16;
-		F(0, 9) = -dt * lambda * t18 + dt * lambda * t21;
-		F(0, 14) = lambda * t3 * t16 * (-1.0 / 2.0);
-		F(0, 15) = lambda * t3 * (t31 + t32);
-		F(0, 16) = -lambda * t3 * (t50 - qx * qz);
-		F(1, 1) = 1.0;
-		F(1, 3) = t22 - lambda * qz * t10 * 2.0;
-		F(1, 4) = t41 + lambda * qw * t7 * 2.0 - lambda * qx * t5 * 4.0;
-		F(1, 5) = t23 + t44;
-		F(1, 6) = lambda * qw * t10 * -2.0 + lambda * qy * t7 * 2.0
-				- lambda * qz * t5 * 4.0;
-		F(1, 7) = dt * t25 * t38 * (-1.0 / 2.0) + dt * t30 * t35 * (1.0 / 2.0)
-				- dt * t28 * (t19 - t20) * (1.0 / 2.0);
-		F(1, 8) = dt * lambda * t39 * -2.0;
-		F(1, 9) = dt * lambda * t35 - dt * lambda * t38;
-		F(1, 14) = -lambda * t3 * t39;
-		F(1, 15) = lambda * t3 * t38 * (-1.0 / 2.0);
-		F(1, 16) = lambda * t3 * (t51 + t52);
-		F(2, 2) = 1.0;
-		F(2, 3) = -t40 + t41;
-		F(2, 4) = -t42 - lambda * qx * t7 * 4.0 + lambda * qz * t10 * 2.0;
-		F(2, 5) = t43 + lambda * qw * t10 * 2.0 - lambda * qy * t7 * 4.0;
-		F(2, 6) = t44 + t45;
-		F(2, 7) = dt * t25 * t48 * (-1.0 / 2.0) + dt * t28 * t47 * (1.0 / 2.0)
-				- dt * t30 * t49 * (1.0 / 2.0);
-		F(2, 8) = dt * lambda * t47;
-		F(2, 9) = -dt * lambda * t48 - dt * lambda * t49;
-		F(2, 14) = lambda * t3 * (t50 + qx * qz);
-		F(2, 15) = -lambda * t3 * (t51 - t52);
-		F(2, 16) = lambda * t3 * t49 * (-1.0 / 2.0);
-		F(3, 3) = t78;
-		F(3, 4) = -b_wx * t63;
-		F(3, 5) = -b_wy * t63;
-		F(3, 6) = -b_wz * t63;
-		F(3, 11) = -qw * t80 - qx * t63 + b_wx * qx * t67 + b_wy * qy * t67
-				+ b_wz * qz * t67;
-		F(3, 12) = -qw * t82 - qy * t63 + b_wx * qx * t71 + b_wy * qy * t71
-				+ b_wz * qz * t71;
-		F(3, 13) = -qw * t84 - qz * t63 + b_wx * qx * t75 + b_wy * qy * t75
-				+ b_wz * qz * t75;
-		F(4, 3) = t87;
-		F(4, 4) = t78;
-		F(4, 5) = t85;
-		F(4, 6) = -b_wy * t63;
-		F(4, 11) = t89 - qx * t80 - b_wx * qw * t67 - b_wz * qy * t67
-				+ b_wy * qz * t67;
-		F(4, 12) = -qx * t82 - qz * t63 - b_wx * qw * t71 - b_wz * qy * t71
-				+ b_wy * qz * t71;
-		F(4, 13) = t93 - qx * t84 - b_wx * qw * t75 - b_wz * qy * t75
-				+ b_wy * qz * t75;
-		F(5, 3) = t92;
-		F(5, 4) = -t85;
-		F(5, 5) = t78;
-		F(5, 6) = t87;
-		F(5, 11) = -qy * t80 + qz * t63 - b_wy * qw * t67 + b_wz * qx * t67
-				- b_wx * qz * t67;
-		F(5, 12) = t89 - qy * t82 - b_wy * qw * t71 + b_wz * qx * t71
-				- b_wx * qz * t71;
-		F(5, 13) = -qx * t63 - qy * t84 - b_wy * qw * t75 + b_wz * qx * t75
-				- b_wx * qz * t75;
-		F(6, 3) = t85;
-		F(6, 4) = t92;
-		F(6, 5) = -t87;
-		F(6, 6) = t78;
-		F(6, 11) = -t93 - qz * t80 - b_wz * qw * t67 - b_wy * qx * t67
-				+ b_wx * qy * t67;
-		F(6, 12) = qx * t63 - qz * t82 - b_wz * qw * t71 - b_wy * qx * t71
-				+ b_wx * qy * t71;
-		F(6, 13) = t89 - qz * t84 - b_wz * qw * t75 - b_wy * qx * t75
-				+ b_wx * qy * t75;
-		F(7, 7) = 1.0;
-		F(8, 8) = 1.0;
-		F(8, 14) = dt;
-		F(9, 9) = 1.0;
-		F(9, 15) = dt;
-		F(10, 9) = 1.0;
-		F(10, 16) = dt;
-		F(11, 11) = 1.0;
-		F(12, 12) = 1.0;
-		F(13, 13) = 1.0;
-		F(14, 14) = 1.0;
-		F(15, 15) = 1.0;
-		F(16, 16) = 1.0;
-		F(17, 11) = gx * (t106 + t120)
-				+ gy * (t103 + t104 + t105 - b_wx * b_wy * t63 * t67 * 4.0)
-				- gz * (t116 + t117 + t118 - b_wz * t94 * 2.0);
-		F(17, 12) = gx * (t110 + t127 - b_wy * t94 * 4.0)
-				+ gy * (t97 + t107 + t108 - b_wx * b_wy * t63 * t71 * 4.0)
-				- gz * (t121 + t122 + t123 - t63 * t78 * 2.0);
-		F(17, 13) = gx * (t112 + t134 - b_wz * t94 * 4.0)
-				- gz * (-t97 + t128 + t129 + t130)
-				- gy
-						* (t102 + t111 - b_wz * t63 * t84 * 2.0
-								- b_wz * t75 * t78 * 2.0);
-		F(17, 17) = t95 * t101 * (-1.356336805555556E-7)
-				- t96 * t101 * 1.356336805555556E-7 + 1.0;
-		F(17, 18) = t113 - b_wz * t63 * t78 * 2.0;
-		F(17, 19) = t135 + t136;
-		F(18, 11) = gy * (t106 + t119 - b_wx * t94 * 4.0)
-				- gz
-						* (t102 + t114 - b_wx * t63 * t80 * 2.0
-								- b_wx * t67 * t78 * 2.0)
-				- gx * (-t103 + t104 + t105 + b_wx * b_wy * t63 * t67 * 4.0);
-		F(18, 12) = gy * (t110 + t126)
-				+ gz * (t115 + t124 + t125 - b_wy * b_wz * t63 * t71 * 4.0)
-				- gx * (-t97 + t107 + t108 + b_wx * b_wy * t63 * t71 * 4.0);
-		F(18, 13) = gy * (t112 + t133 - b_wz * t94 * 4.0)
-				+ gz * (t103 + t131 + t132 - b_wy * b_wz * t63 * t75 * 4.0)
-				- gx
-						* (-t102 + t111 + b_wz * t63 * t84 * 2.0
-								+ b_wz * t75 * t78 * 2.0);
-		F(18, 17) = t113 + b_wz * t63 * t78 * 2.0;
-		F(18, 18) = t96 * t101 * (-1.356336805555556E-7)
-				- t101 * t109 * 1.356336805555556E-7 + 1.0;
-		F(18, 19) = t137 - b_wx * t63 * t78 * 2.0;
-		F(19, 11) = gz * (t119 + t120 - b_wx * t94 * 4.0)
-				+ gx * (t115 + t116 + t117 - t118)
-				- gy
-						* (-t102 + t114 + b_wx * t63 * t80 * 2.0
-								+ b_wx * t67 * t78 * 2.0);
-		F(19, 12) = gz * (t126 + t127 - b_wy * t94 * 4.0)
-				- gx * (t102 - t121 - t122 + t123)
-				- gy * (-t115 + t124 + t125 + b_wy * b_wz * t63 * t71 * 4.0);
-		F(19, 13) = gz * (t133 + t134) + gx * (t97 + t128 + t129 - t130)
-				- gy * (-t103 + t131 + t132 + b_wy * b_wz * t63 * t75 * 4.0);
-		F(19, 17) = t135 - t136;
-		F(19, 18) = t137 + b_wx * t63 * t78 * 2.0;
-		F(19, 19) = t95 * t101 * (-1.356336805555556E-7)
-				- t101 * t109 * 1.356336805555556E-7 + 1.0;
-		F(20, 20) = 1.0;
-		F(21, 21) = 1.0;
-		F(22, 22) = 1.0;
-		F(23, 23) = 1.0;
-		F(24, 24) = 1.0;
-		F(25, 25) = 1.0;
+		double   t2 = dt*dt;
+		double   t3 = b_dy*dt;
+		double   t4 = b_ay*t2*(1.0/2.0);
+		double   t5 = t3+t4;
+		double   t6 = b_dz*dt;
+		double   t7 = b_az*t2*(1.0/2.0);
+		  double   t8 = t6+t7;
+		  double   t9 = b_dx*dt;
+		  double   t10 = b_ax*t2*(1.0/2.0);
+		  double   t11 = t9+t10;
+		  double   t12 = qy*qy;
+		  double   t13 = t12*2.0;
+		  double   t14 = qz*qz;
+		  double   t15 = t14*2.0;
+		  double   t16 = t13+t15-1.0;
+		  double   t17 = qw*qz*2.0;
+		  double   t18 = qx*qy*2.0;
+		  double   t19 = t17+t18;
+		  double   t20 = qw*qy;
+		  double   t54 = qx*qz;
+		  double 	  t21 = t20-t54;
+		  double 	  t22 = lambda*qx*t8*2.0;
+		  double 	  t23 = lambda*qz*t8*2.0;
+		  double 	  t24 = b_dy*2.0;
+		  double 	  t25 = b_ay*dt;
+		  double 	  t26 = t24+t25;
+		  double 	  t27 = b_dx*2.0;
+		  double 	  t28 = b_ax*dt;
+		  double 	  t29 = t27+t28;
+		  double 	  t30 = b_dz*2.0;
+		  double 	  t31 = b_az*dt;
+		  double 	  t32 = t30+t31;
+		  double 	  t33 = qw*qz;
+		  double 	  t34 = qx*qy;
+		  double 	  t35 = qx*qx;
+		  double 	  t36 = t35*2.0;
+		  double 	  t37 = t15+t36-1.0;
+		  double 	  t38 = qw*qx*2.0;
+		  double 	  t39 = qy*qz*2.0;
+		  double 	  t40 = t38+t39;
+		  double 	  t41 = t33-t34;
+		  double 	  t42 = lambda*qx*t5*2.0;
+		  double 	  t43 = lambda*qy*t11*2.0;
+		  double 	  t44 = lambda*qw*t5*2.0;
+		  double 	  t45 = lambda*qz*t5*2.0;
+		  double 	  t46 = lambda*qx*t11*2.0;
+		  double 	  t47 = lambda*qy*t5*2.0;
+		  double 	  t48 = qw*qy*2.0;
+		  double 	  t49 = qx*qz*2.0;
+		  double 	  t50 = t48+t49;
+		  double 	  t51 = qw*qx;
+		  double 	  t52 = qy*qz;
+		  double 	  t53 = t13+t36-1.0;
+		  double 	  t55 = t51-t52;
+		  double 	  t56 = fabs(b_wx);
+		  double 	  t57 = fabs(b_wy);
+		  double 	  t58 = fabs(b_wz);
+		  double 	  t60 = t56*t56;
+		  double 	  t61 = t57*t57;
+		  double 	  t62 = t58*t58;
+		  double 	  t59 = t60+t61+t62;
+		  double 	  t63 = t2*t2;
+		  double   t64 = t59*t59;
+		  double   t65 = t63*t64*2.604166666666667E-4;
+		  double   t67 = t2*t59*(1.0/4.8E1);
+		  double 	  t66 = t65-t67+1.0/2.0;
+		  double 	  t68 = (b_wx/fabs(b_wx));
+		  double 	  t69 = t2*t56*t68*(1.0/2.4E1);
+		  double 	  t71 = t56*t59*t63*t68*(1.0/9.6E2);
+		  double 	  t70 = t69-t71;
+		  double 	  t72 = (b_wy/fabs(b_wy));
+		  double 	  t73 = t2*t57*t72*(1.0/2.4E1);
+		  double 	  t75 = t57*t59*t63*t72*(1.0/9.6E2);
+		  double 	  t74 = t73-t75;
+		  double 	  t76 = (b_wz/fabs(b_wz));
+		  double 	  t77 = t2*t58*t76*(1.0/2.4E1);
+		  double 	  t79 = t58*t59*t63*t76*(1.0/9.6E2);
+		  double 	  t78 = t77-t79;
+		  double 	  t80 = t63*t64*(1.0/3.84E2);
+		  double 	  t89 = t2*t59*(1.0/2.0);
+		  double 	  t81 = t80-t89+1.0;
+		  double 	  t82 = t2*t56*t68;
+		  double 	  t91 = t56*t59*t63*t68*(1.0/9.6E1);
+		  double 	  t83 = t82-t91;
+		  double 	  t84 = t2*t57*t72;
+		  double 	  t93 = t57*t59*t63*t72*(1.0/9.6E1);
+		  double 	  t85 = t84-t93;
+		  double 	  t86 = t2*t58*t76;
+		  double 	  t94 = t58*t59*t63*t76*(1.0/9.6E1);
+		  double 	  t87 = t86-t94;
+		  double 	  t88 = b_wz*t66;
+		  double 		  t90 = b_wx*t66;
+		  double 	  t92 = qw*t66;
+		  double 		  t95 = b_wy*t66;
+		  double 		  t96 = qy*t66;
+		  double 	  t97 = t66*t66;
+		  double 	  t98 = b_wy*b_wy;
+		  double 	  t99 = b_wz*b_wz;
+		  double 	  t100 = b_wx*t97*2.0;
+		  double 	  t102 = t63*t64;
+		  double 	  t103 = t2*t59*8.0E1;
+		  double 	  t101 = t102-t103+1.92E3;
+		  double 	  t104 = t101*t101;
+		  double 		  t105 = t66*t81*2.0;
+		  double 	  t106 = b_wy*t97*2.0;
+		  double 	  t107 = b_wz*t70*t81*2.0;
+		  double 	  t108 = b_wz*t66*t83*2.0;
+		  double 	  t109 = t66*t70*t99*4.0;
+		  double 	  t110 = b_wz*t74*t81*2.0;
+		  double 	  t111 = b_wz*t66*t85*2.0;
+		  double 	  t112 = b_wx*b_wx;
+		  double 	  t113 = t66*t74*t99*4.0;
+		  double 	  t114 = b_wx*b_wy*t66*t78*4.0;
+		  double 	  t115 = t66*t78*t99*4.0;
+		  double 	  t116 = b_wx*b_wy*t104*1.356336805555556E-7;
+		  double 	  t117 = b_wy*b_wz*t66*t70*4.0;
+		  double 	  t118 = b_wz*t97*2.0;
+		  double 		  t119 = b_wy*t70*t81*2.0;
+		  double 	  t120 = b_wy*t66*t83*2.0;
+		  double 		  t121 = b_wx*b_wz*t66*t70*4.0;
+		  double 	  t122 = t66*t70*t112*4.0;
+		  double 	  t123 = t66*t70*t98*4.0;
+		  double 		  t124 = b_wy*t74*t81*2.0;
+		  double 	  t125 = b_wy*t66*t85*2.0;
+		  double 	  t126 = b_wx*b_wz*t66*t74*4.0;
+		  double 	  t127 = b_wx*t74*t81*2.0;
+		  double 	  t128 = b_wx*t66*t85*2.0;
+		  double 	  t129 = t66*t74*t112*4.0;
+		  double 	  t130 = t66*t74*t98*4.0;
+		  double 	  t131 = b_wy*t78*t81*2.0;
+		  double 	  t132 = b_wy*t66*t87*2.0;
+		  double 	  t133 = b_wx*b_wz*t66*t78*4.0;
+		  double 	  t134 = b_wx*t78*t81*2.0;
+		  double 	  t135 = b_wx*t66*t87*2.0;
+		  double 	  t136 = t66*t78*t112*4.0;
+		  double 	  t137 = t66*t78*t98*4.0;
+		  double 	  t138 = b_wx*b_wz*t104*1.356336805555556E-7;
+		  double 	  t139 = b_wy*t66*t81*2.0;
+		  double 	  t140 = b_wy*b_wz*t104*1.356336805555556E-7;
+		  F(0,0) = 1.0;
+		  F(0,3) = t45-lambda*qy*t8*2.0;
+		  F(0,4) = t23+t47;
+		  F(0,5) = t42-lambda*qw*t8*2.0-lambda*qy*t11*4.0;
+		  F(0,6) = t22+t44-lambda*qz*t11*4.0;
+		  F(0,7) = dt*t32*(t48-qx*qz*2.0)*(-1.0/2.0)-dt*t16*t29*(1.0/2.0)+dt*t19*t26*(1.0/2.0);
+		  F(0,8) = -dt*lambda*t16;
+		  F(0,9) = dt*lambda*t19;
+		  F(0,10) = dt*lambda*t21*-2.0;
+		  F(0,14) = lambda*t2*t16*(-1.0/2.0);
+		  F(0,15) = lambda*t2*(t33+t34);
+		  F(0,16) = -lambda*t2*t21;
+		  F(1,1) = 1.0;
+		  F(1,3) = t22-lambda*qz*t11*2.0;
+		  F(1,4) = t43+lambda*qw*t8*2.0-lambda*qx*t5*4.0;
+		  F(1,5) = t23+t46;
+		  F(1,6) = lambda*qw*t11*-2.0+lambda*qy*t8*2.0-lambda*qz*t5*4.0;
+		  F(1,7) = dt*t26*t37*(-1.0/2.0)+dt*t32*t40*(1.0/2.0)-dt*t29*(t17-t18)*(1.0/2.0);
+		  F(1,8) = dt*lambda*t41*-2.0;
+		  F(1,9) = -dt*lambda*t37;
+		  F(1,10) = dt*lambda*t40;
+		  F(1,14) = -lambda*t2*t41;
+		  F(1,15) = lambda*t2*t37*(-1.0/2.0);
+		  F(1,16) = lambda*t2*(t51+t52);
+		  F(2,2) = 1.0;
+		  F(2,3) = -t42+t43;
+		  F(2,4) = -t44-lambda*qx*t8*4.0+lambda*qz*t11*2.0;
+		  F(2,5) = t45+lambda*qw*t11*2.0-lambda*qy*t8*4.0;
+		  F(2,6) = t46+t47;
+		  F(2,7) = dt*t29*t50*(1.0/2.0)-dt*t32*t53*(1.0/2.0)-dt*t26*(t38-t39)*(1.0/2.0);
+		  F(2,8) = dt*lambda*t50;
+		  F(2,9) = dt*lambda*t55*-2.0;
+		  F(2,10) = -dt*lambda*t53;
+		  F(2,14) = lambda*t2*(t20+t54);
+		  F(2,15) = -lambda*t2*t55;
+		  F(2,16) = lambda*t2*t53*(-1.0/2.0);
+		  F(3,3) = t81;
+		  F(3,4) = -b_wx*t66;
+		  F(3,5) = -b_wy*t66;
+		  F(3,6) = -b_wz*t66;
+		  F(3,11) = -qw*t83-qx*t66+b_wx*qx*t70+b_wy*qy*t70+b_wz*qz*t70;
+		  F(3,12) = -qw*t85-qy*t66+b_wx*qx*t74+b_wy*qy*t74+b_wz*qz*t74;
+		  F(3,13) = -qw*t87-qz*t66+b_wx*qx*t78+b_wy*qy*t78+b_wz*qz*t78;
+		  F(4,3) = t90;
+		  F(4,4) = t81;
+		  F(4,5) = t88;
+		  F(4,6) = -b_wy*t66;
+		  F(4,11) = t92-qx*t83-b_wx*qw*t70-b_wz*qy*t70+b_wy*qz*t70;
+		  F(4,12) = -qx*t85-qz*t66-b_wx*qw*t74-b_wz*qy*t74+b_wy*qz*t74;
+		  F(4,13) = t96-qx*t87-b_wx*qw*t78-b_wz*qy*t78+b_wy*qz*t78;
+		  F(5,3) = t95;
+		  F(5,4) = -t88;
+		  F(5,5) = t81;
+		  F(5,6) = t90;
+		  F(5,11) = -qy*t83+qz*t66-b_wy*qw*t70+b_wz*qx*t70-b_wx*qz*t70;
+		  F(5,12) = t92-qy*t85-b_wy*qw*t74+b_wz*qx*t74-b_wx*qz*t74;
+		  F(5,13) = -qx*t66-qy*t87-b_wy*qw*t78+b_wz*qx*t78-b_wx*qz*t78;
+		  F(6,3) = t88;
+		  F(6,4) = t95;
+		  F(6,5) = -t90;
+		  F(6,6) = t81;
+		  F(6,11) = -t96-qz*t83-b_wz*qw*t70-b_wy*qx*t70+b_wx*qy*t70;
+		  F(6,12) = qx*t66-qz*t85-b_wz*qw*t74-b_wy*qx*t74+b_wx*qy*t74;
+		  F(6,13) = t92-qz*t87-b_wz*qw*t78-b_wy*qx*t78+b_wx*qy*t78;
+		  F(7,7) = 1.0;
+		  F(8,8) = 1.0;
+		  F(8,14) = dt;
+		  F(9,9) = 1.0;
+		  F(9,15) = dt;
+		  F(10,10) = 1.0;
+		  F(10,16) = dt;
+		  F(11,11) = 1.0;
+		  F(12,12) = 1.0;
+		  F(13,13) = 1.0;
+		  F(14,14) = 1.0;
+		  F(15,15) = 1.0;
+		  F(16,16) = 1.0;
+		  F(17,11) = gx*(t109+t123)+gy*(t106+t107+t108-b_wx*b_wy*t66*t70*4.0)-gz*(t119+t120+t121-b_wz*t97*2.0);
+		  F(17,12) = gx*(t113+t130-b_wy*t97*4.0)+gy*(t100+t110+t111-b_wx*b_wy*t66*t74*4.0)-gz*(t124+t125+t126-t66*t81*2.0);
+		  F(17,13) = gx*(t115+t137-b_wz*t97*4.0)-gz*(-t100+t131+t132+t133)-gy*(t105+t114-b_wz*t66*t87*2.0-b_wz*t78*t81*2.0);
+		  F(17,17) = t98*t104*(-1.356336805555556E-7)-t99*t104*1.356336805555556E-7+1.0;
+		  F(17,18) = t116-b_wz*t66*t81*2.0;
+		  F(17,19) = t138+t139;
+		  F(18,11) = gy*(t109+t122-b_wx*t97*4.0)-gz*(t105+t117-b_wx*t66*t83*2.0-b_wx*t70*t81*2.0)-gx*(-t106+t107+t108+b_wx*b_wy*t66*t70*4.0);
+		  F(18,12) = gy*(t113+t129)+gz*(t118+t127+t128-b_wy*b_wz*t66*t74*4.0)-gx*(-t100+t110+t111+b_wx*b_wy*t66*t74*4.0);
+		  F(18,13) = gy*(t115+t136-b_wz*t97*4.0)+gz*(t106+t134+t135-b_wy*b_wz*t66*t78*4.0)-gx*(-t105+t114+b_wz*t66*t87*2.0+b_wz*t78*t81*2.0);
+		  F(18,17) = t116+b_wz*t66*t81*2.0;
+		  F(18,18) = t99*t104*(-1.356336805555556E-7)-t104*t112*1.356336805555556E-7+1.0;
+		  F(18,19) = t140-b_wx*t66*t81*2.0;
+		  F(19,11) = gz*(t122+t123-b_wx*t97*4.0)+gx*(t118+t119+t120-t121)-gy*(-t105+t117+b_wx*t66*t83*2.0+b_wx*t70*t81*2.0);
+		  F(19,12) = gz*(t129+t130-b_wy*t97*4.0)-gx*(t105-t124-t125+t126)-gy*(-t118+t127+t128+b_wy*b_wz*t66*t74*4.0);
+		  F(19,13) = gz*(t136+t137)+gx*(t100+t131+t132-t133)-gy*(-t106+t134+t135+b_wy*b_wz*t66*t78*4.0);
+		  F(19,17) = t138-t139;
+		  F(19,18) = t140+b_wx*t66*t81*2.0;
+		  F(19,19) = t98*t104*(-1.356336805555556E-7)-t104*t112*1.356336805555556E-7+1.0;
+		  F(20,20) = 1.0;
+		  F(21,21) = 1.0;
+		  F(22,22) = 1.0;
+		  F(23,23) = 1.0;
+		  F(24,24) = 1.0;
+		  F(25,25) = 1.0;
+
 
 	}
 }
