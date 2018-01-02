@@ -54,15 +54,24 @@ gravity_vector_process_small = quaternionRotate(dq_small_inv, [gx;gy;gz])
 
 
 % compute the case for a zero omega
+% process_zero = [pos_process;
+%             quat_process_small;
+%             lambda;
+%             vel_process;
+%             omega;
+%             accel;
+%             gravity_vector_process_small;
+%             bias_accel_x; bias_accel_y; bias_accel_z; bias_gyro_x; bias_gyro_y; bias_gyro_z]
+        
 process_zero = [pos_process;
-            quat_process_small;
+            quat;
             lambda;
             vel_process;
             omega;
             accel;
-            gravity_vector_process_small;
+            [gx;gy;gz];
             bias_accel_x; bias_accel_y; bias_accel_z; bias_gyro_x; bias_gyro_y; bias_gyro_z]
-        
+
 J_zero = jacobian(process_zero, [x y z qw qx qy qz lambda b_dx b_dy b_dz b_wx b_wy b_wz b_ax b_ay b_az gx gy gz bias_accel_x bias_accel_y bias_accel_z bias_gyro_x bias_gyro_y bias_gyro_z])
 
 
@@ -73,5 +82,7 @@ a2q = jacobian(dq, [b_wx, b_wy, b_wz])
 a2q_small = jacobian(dq_small, [b_wx, b_wy, b_wz])
 ccode(simplify(a2q), 'File', 'angle_to_quat.c')
 ccode(simplify(a2q_small), 'File', 'angle_to_quat_small.c')
+
+simplify(a2q, 100)
 ccode(simplify(J), 'File', 'lc_process_nonzero.c')
 ccode(simplify(J_zero), 'File', 'lc_process_zero.c')

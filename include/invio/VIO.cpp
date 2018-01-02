@@ -19,7 +19,7 @@ VIO::VIO() {
 	this->parseROSParams();
 
 	// initialize EKF
-	this->pose_ekf = PoseEKF(ros::Time::now()); //TODO make sure this is ok
+	this->pose_ekf = PoseEKF(ros::Time(0)); //because ros::Time::now() doesnt work well while using bag files
 
 	image_transport::ImageTransport it(nh);
 	image_transport::CameraSubscriber bottom_cam_sub = it.subscribeCamera(
@@ -69,6 +69,10 @@ void VIO::camera_callback(const sensor_msgs::ImageConstPtr& img,
 
 	cv::Mat temp = cv_bridge::toCvShare(img, img->encoding)->image.clone();
 
+	if(this->pose_ekf.state.t == ros::Time(0)){
+		this->pose_ekf.state.t = img->header.stamp; // this is the first frame so this will be the starting time
+	}
+
 	cv::Mat scaled_img;
 	cv::resize(temp, scaled_img, cv::Size(temp.cols / INVERSE_IMAGE_SCALE, temp.rows / INVERSE_IMAGE_SCALE));
 
@@ -89,6 +93,9 @@ void VIO::addFrame(cv::Mat img, cv::Mat_<float> k, ros::Time t) {
 		f.setPose(
 				Frame::tf2sophus(b2c)); // set the initial position to 0 (this is world to camera)
 
+		pose_ekf.state.setPosition(Eigen::Vector3d(b2c.getOrigin().x(), b2c.getOrigin().y(), b2c.getOrigin().z()));
+		pose_ekf.state.setQuat(Eigen::Quaterniond(b2c.getRotation().w(), b2c.getRotation().x(), b2c.getRotation().y(), b2c.getRotation().z()));
+
 		this->frame_buffer.push_front(f); // add the frame to the front of the buffer
 
 		this->replenishFeatures((this->frame_buffer.front()));
@@ -98,10 +105,10 @@ void VIO::addFrame(cv::Mat img, cv::Mat_<float> k, ros::Time t) {
 		this->frame_buffer.push_front(f); // add the frame to the front of the buffer
 
 		//set the predicted pose of the current frame
-		//this->frame_buffer.front().setPose(this->frame_buffer.at(1).getPose()); // temp assume zero velocity
-		this->pose_ekf.process(t); // predict the current state
+		this->frame_buffer.front().setPose(this->frame_buffer.at(1).getPose()); // temp assume zero velocity
+		//this->pose_ekf.process(t); // predict the current state
 
-		this->frame_buffer.front().setPose(this->pose_ekf.getSE3()); // set the pose using the predicted state
+		//this->frame_buffer.front().setPose(this->pose_ekf.getSE3()); // set the pose using the predicted state
 
 		// attempt to flow features into the next frame if there are features
 		this->flowFeatures(this->frame_buffer.at(1), this->frame_buffer.front());
@@ -131,7 +138,7 @@ void VIO::addFrame(cv::Mat img, cv::Mat_<float> k, ros::Time t) {
 			if(moba_passed)
 			{
 				//update the ekf with the optimized pose and its estimated uncertainty
-				this->pose_ekf.updateWithVOPose(this->frame_buffer.front().getPose(), cov, t);
+				//this->pose_ekf.updateWithVOPose(this->frame_buffer.front().getPose(), cov, t);
 
 				// extract the odometry from invio and publish it
 				this->publishOdometry(this->frame_buffer.at(1), this->frame_buffer.front());
@@ -294,7 +301,7 @@ bool VIO::MOBA(Frame& f, Eigen::Matrix<double, 6, 6>& cov, bool useImmature)
 		{
 			if(useImmature || !e.getPoint()->isImmature())
 			{
-				ROS_DEBUG_STREAM("using position for moba: " << e.getPoint()->getWorldCoordinate());
+				//ROS_DEBUG_STREAM("using position for moba: " << e.getPoint()->getWorldCoordinate());
 
 				e.computeBorderWeight(); // precompute the border weight of this edge
 
@@ -338,7 +345,7 @@ bool VIO::MOBA(Frame& f, Eigen::Matrix<double, 6, 6>& cov, bool useImmature)
 			SQUARED_ERROR = e.squaredNorm();
 			double weight = this->getHuberWeight(sqrt(SQUARED_ERROR)) * (*it)->getBorderWeight() / std::pow((*it)->getPoint()->getDepthVariance(), 2);
 
-			ROS_DEBUG_STREAM("edge error2: " << SQUARED_ERROR);
+			//ROS_DEBUG_STREAM("edge error2: " << SQUARED_ERROR);
 
 			A.noalias() += J.transpose()*J*weight;
 			b.noalias() -= J.transpose()*e*weight;
@@ -377,7 +384,8 @@ bool VIO::MOBA(Frame& f, Eigen::Matrix<double, 6, 6>& cov, bool useImmature)
 	f.setPose_inv(currentGuess); // set the new optimized pose
 
 	//estimate the covariance matrix
-	cov = (A*chi2).inverse();
+	cov = (A*sqrt(chi2)).inverse();
+	//cov = Eigen::MatrixXd::Identity(6, 6);
 
 
 	//remove outliers

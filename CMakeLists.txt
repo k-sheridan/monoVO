@@ -78,3 +78,6 @@ target_link_libraries(full_vio ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${sophus_
 
 add_executable(invio_node src/invio_node.cpp)
 target_link_libraries(invio_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${sophus_LIBRARIES} full_vio)
+
+add_executable(invio_ekf_test test/ekf_test.cpp)
+target_link_libraries(invio_ekf_test ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${sophus_LIBRARIES} full_vio)

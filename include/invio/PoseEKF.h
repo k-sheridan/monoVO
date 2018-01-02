@@ -66,13 +66,11 @@ public:
 
 	Sophus::SE3d getSE3();
 
-private:
-
 	void resetState(); // place the state and covariance at initial conditions
 
 	void computeStateTransitionJacobian(State& from_state, double dt, Eigen::Matrix<double, STATE_SIZE, STATE_SIZE>& F);
 
-	void computeAngle2QuaternionJacobian(Eigen::Vector3d angle, Eigen::Matrix<double, 4, 3>& J);
+	void computeAngleAxis2QuaternionSpaceJacobian(Eigen::Matrix<double, 6, 1> x, Eigen::Matrix<double, 7, 6>& J);
 
 	Eigen::Matrix<double, STATE_SIZE, STATE_SIZE> computeProcessNoise(double dt);
 
