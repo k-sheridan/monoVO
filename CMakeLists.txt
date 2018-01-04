@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(invio)
+project(monovo)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
  add_compile_options(-std=c++11)
@@ -76,8 +76,8 @@ target_link_libraries(depthSolver ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${soph
 add_library(full_vio include/invio/VIO.h include/invio/VIO.cpp)
 target_link_libraries(full_vio ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${sophus_LIBRARIES} vioParams vioFeature vioFrame depthSolver vioPoseEKF)
 
-add_executable(invio_node src/invio_node.cpp)
-target_link_libraries(invio_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${sophus_LIBRARIES} full_vio)
+add_executable(monovo_node src/invio_node.cpp)
+target_link_libraries(monovo_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${sophus_LIBRARIES} full_vio)
 
-add_executable(invio_ekf_test test/ekf_test.cpp)
-target_link_libraries(invio_ekf_test ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${sophus_LIBRARIES} full_vio)
+add_executable(monovo_ekf_test test/ekf_test.cpp)
+target_link_libraries(monovo_ekf_test ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${sophus_LIBRARIES} full_vio)

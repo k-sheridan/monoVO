@@ -2,18 +2,18 @@
 
 	
 
-	<param name="robot_description" command="cat $(find invio)/urdf/sensorRig1_description.urdf" />
+	<param name="robot_description" command="cat $(find monovo)/urdf/sensorRig1_description.urdf" />
 
 	<node pkg="robot_state_publisher" type="robot_state_publisher" name="m7_state_pub" >
       
     </node>
     
-    <node name="invio" pkg="invio" type="invio_node" output="screen">
+    <node name="monovo" pkg="monovo" type="invio_node" output="screen">
 
-	<rosparam command="load" file="$(find invio)/params/test.yaml" />
+	<rosparam command="load" file="$(find monovo)/params/test.yaml" />
 
     </node>
     
-    <node pkg="rviz" type="rviz" name="invio_rviz" args="-d $(find invio)/rviz/invio.rviz"/>
+    <node pkg="rviz" type="rviz" name="invio_rviz" args="-d $(find monovo)/rviz/invio.rviz"/>
 
 </launch>
